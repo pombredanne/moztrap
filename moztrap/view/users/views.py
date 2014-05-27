@@ -5,7 +5,8 @@ Account-related views.
 from functools import partial
 
 from django.conf import settings
-from django.core.urlresolvers import reverse
+from django.core.urlresolvers import reverse, resolve
+from django.http import Http404
 from django.shortcuts import redirect, render, get_object_or_404
 from django.views.decorators.http import require_POST
 
@@ -44,6 +45,14 @@ class Verify(BaseVerify):
 @anonymous_csrf
 @ratelimit(field="username", method="POST", rate="5/m")
 def login(request):
+    # only allow ``next`` redirects to locations within moztrap.
+    if "next" in request.GET:
+        try:
+            resolve(request.GET["next"])
+        except Http404:
+            q = request.GET.copy()
+            q.update({"next": "/"})
+            request.GET = q
     kwargs = {
         "template_name": "users/login.html",
         "authentication_form": forms.CaptchaAuthenticationForm,
@@ -87,8 +96,7 @@ def password_reset(request):
         password_reset_form=forms.PasswordResetForm,
         template_name="users/password_reset_form.html",
         email_template_name="registration/password_reset_email.txt",
-        # @@@ enable this in Django 1.4
-        # subject_template_name="registration/password_reset_subject.txt",
+        subject_template_name="registration/password_reset_subject.txt",
         post_reset_redirect=reverse("home")
         )
 
@@ -158,7 +166,13 @@ def register(request):
 
 @login_required
 def set_username(request):
+    # only allow next redirects to places within moztrap.
     next = request.REQUEST.get("next", "/")
+    try:
+        resolve(next)
+    except Http404:
+        next = "/"
+
     if request.method == "POST":
         form = forms.SetUsernameForm(request.POST, instance=request.user)
         if form.is_valid():

@@ -1,5 +1,5 @@
-Test Cases and Suites
-=====================
+Test Cases, Suites and Tags
+===========================
 
 .. _test-cases:
 
@@ -37,9 +37,17 @@ Case Edit Fields
 * **Name** - The summary name for the case.
 * **Description** - Any description, pre-conditions, links or notes to
   associate with the case.  This field is displayed while running the test.
-  Markdown syntax is supported.
+  Markdown_ syntax is supported.
+* **Priority** - The priority of the test case.  Set a case as ``priority 1``
+  to indicate it is the highest priority.  This can be anywhere from no
+  priority, or from 1 through 4.  This is the same across all versions of the
+  case.  You can filter and sort by this field when running or managing
+  cases.  You can also filter by this when selecting which cases to include
+  in a suite.
 * **Add Tags** - Enter tags to apply to this case.  Hit enter after each tag to
-  see the tag chicklet displayed.  Auto-completes for existing tags.
+  see the tag chicklet displayed.  Auto-completes for existing tags.  During
+  test execution, cases that have tags will show the tag descriptions with
+  with each case.
 * **Add Attachment** - You can attach files to cases that may help running the
   test.  (e.g: images, audio, video, etc.)
 * **Instruction / Expected** - The test instruction and corresponding expected
@@ -82,6 +90,21 @@ way to organize and filter them on any number of axes.
 By default, tags are :ref:`product<products>`-specific; global tags can also be
 created and managed via the tag management UI.
 
+Merging Tags
+^^^^^^^^^^^^
+
+.. _tag-merge:
+
+The edit screen for tags is a great way to merge two tags into one.  For
+example, if you wanted to merge TagA and TagB all into TagB, then simply:
+
+* Edit TagB
+* In the list of available cases, filter on TagA
+* Select all the available cases and click the green add button
+* Save TagB
+* Delete TagA
+
+
 .. _tag-edit-fields:
 
 Tag Edit Fields
@@ -91,6 +114,14 @@ Tag Edit Fields
 * **Product** - (optional) Tags can be specific to a Product, or they can be
   global.  If a tag is Product specific, then cases for other products can't
   use it.  This is useful if you want to separate tags for different products.
+* **Description** - (optional) This description will be displayed during test
+  execution before the test case description and steps.  This is useful to
+  provide some *setup* or *precondition* code that doesn't have to be
+  repeated for a group of cases.  Supports Markdown_ syntax.
+* **Available Cases** - Test Cases that have the same Product you selected for
+  this tag.  This list is filterable.
+* **Included Cases** - Test Cases that have this tag applied.  This list is not
+  filtered.
 
 
 .. _attachments:
@@ -100,3 +131,6 @@ Attachments
 
 A :ref:`test case<test-cases>` can have any number of file attachments: these
 will be made available for download by testers when the test case is executed.
+
+
+.. _Markdown: http://daringfireball.net/projects/markdown/syntax

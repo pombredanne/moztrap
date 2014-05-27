@@ -1,9 +1,13 @@
 {% extends 'manage/productversion/productversion_form.html' %}
 
+{% block location %}Edit Version{% endblock %}
 {% block sectionclass %}edit-productversion{% endblock %}
 {% block formid %}productversion-edit-form{% endblock %}
 {% block formtitle %}Edit "{{ productversion.name }}" Version{% endblock %}
 
 {% block formtop %}
-<a href="{% url manage_productversion_environments productversion_id=productversion.id %}" class="select-env-link">select environments</a>
+<a href="{% url 'manage_productversion_environments' productversion_id=productversion.id %}" class="select-env-link">select environments</a>
 {% endblock %}
+{% block bottomfields %}
+    {% include "forms/_field.html" with field=form.fill_from label="Fill cases from" %}
+{% endblock%}

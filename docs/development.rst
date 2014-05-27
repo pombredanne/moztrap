@@ -11,6 +11,41 @@ The :doc:`upgrading` documentation is also applicable to updating your
 development checkout of MozTrap.
 
 
+Community
+---------
+
+To connect with MozTrap development, visit the ``#moztrap`` IRC channel at
+``irc.mozilla.org``, or see the `Pivotal Tracker backlog`_.
+
+.. _Pivotal Tracker backlog: https://www.pivotaltracker.com/projects/280483
+
+
+Updating this documentation
+---------------------------
+
+MozTrap documentation is hosted on ReadTheDocs.org and is maintained in the
+MozTrap repo.  So updating the docs involves forking the repo, changing the
+appropriate reStructuredText documents and submitting a pull request.  Then
+the team will review them and merge them after any needed adjustments are made.
+
+So here are your steps:
+
+    #. fork the `MozTrap repo`_
+    #. make any changes in the ``/docs`` folder using `Sphinx and
+       reStructuredText`_ formatting
+    #. test that your changes are correctly formatted by installing the python
+       Sphinx package (in the repo's ``requirements.txt`` document) by typing
+       ``make html`` in that same ``/docs`` folder
+    #. load the file: ``/docs/_build/html/index.html`` into your browser
+       (it's `Firefox`_, right?) to test your changes
+    #. submit your pull request and it will be reviewed shortly
+    #. receive a big thanks for helping!!
+
+.. _MozTrap repo: https://github.com/mozilla/moztrap
+.. _Sphinx and reStructuredText: http://sphinx-doc.org/rest.html
+.. _Firefox: http://www.mozilla.org/en-US/firefox/new/
+
+
 Coding standards
 ----------------
 
@@ -64,6 +99,16 @@ sources and re-generate the CSS.
 To install the necessary Ruby gems for Compass/Sass development, run
 ``bin/install-gems``.  Update ``requirements/gems.txt`` if newer gems should be
 used.
+
+While tweaking the sass files, you should run the command line file to update
+the CSS as you go.  To do this::
+
+    compass watch
+
+or a workaround to a bug for Mac OS 10.8::
+
+    compass watch --poll
+
 
 .. _Sass: http://sass-lang.com
 .. _Compass: http://compass-style.org

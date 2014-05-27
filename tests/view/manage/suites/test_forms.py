@@ -102,6 +102,30 @@ class EditSuiteFormTest(case.DBTestCase):
         self.assertEqual(set(suite.cases.all()), set([c]))
 
 
+    def test_add_bad_case(self):
+        """Try to add a non-existent case to a suite, get exception."""
+        s = self.F.SuiteFactory()
+        c = self.F.CaseFactory(product=s.product)
+
+        f = self.form(
+            {
+                "product": str(s.product.id),
+                "name": s.name,
+                "description": s.description,
+                "status": s.status,
+                "cases": [str(c.id + 1)],
+                "cc_version": str(s.cc_version),
+                },
+            instance=s,
+            )
+
+        self.assertFalse(f.is_valid())
+        self.assertEqual(
+            f.errors["cases"],
+            [u"Not a valid case for this suite."]
+        )
+
+
     def test_edit_cases(self):
         """Can edit cases of a suite."""
         s = self.F.SuiteFactory.create()
@@ -115,6 +139,60 @@ class EditSuiteFormTest(case.DBTestCase):
                 "description": s.description,
                 "status": s.status,
                 "cases": [str(c.id)],
+                "cc_version": str(s.cc_version),
+                },
+            instance=s,
+            )
+
+        self.assertTrue(f.is_valid())
+        suite = f.save()
+
+        self.assertEqual(set(suite.cases.all()), set([c]))
+
+
+    def test_edit_cases_order_only(self):
+        """Can edit cases of a suite."""
+        s = self.F.SuiteFactory.create()
+        c1 = self.F.CaseFactory.create(product=s.product)
+        c2 = self.F.CaseFactory.create(product=s.product)
+        self.F.SuiteCaseFactory.create(suite=s, case=c1, order=0)
+        self.F.SuiteCaseFactory.create(suite=s, case=c2, order=1)
+
+        f = self.form(
+            {
+                "product": str(s.product.id),
+                "name": s.name,
+                "description": s.description,
+                "status": s.status,
+                "cases": [str(c2.id), str(c1.id)],
+                "cc_version": str(s.cc_version),
+                },
+            instance=s,
+            )
+
+        self.assertTrue(f.is_valid())
+        suite = f.save()
+
+        self.assertEqual(
+            list(suite.cases.all().order_by("suitecases__order")),
+            [c2, c1],
+            )
+
+
+    def test_remove_dup_cases(self):
+        """Can edit cases of a suite."""
+        s = self.F.SuiteFactory.create()
+        c = self.F.CaseFactory.create(product=s.product)
+        self.F.SuiteCaseFactory.create(suite=s, case=c)
+        self.F.SuiteCaseFactory.create(suite=s, case=c)
+
+        f = self.form(
+            {
+                "product": str(s.product.id),
+                "name": s.name,
+                "description": s.description,
+                "status": s.status,
+                "cases": [str(c.id), str(c.id)],
                 "cc_version": str(s.cc_version),
                 },
             instance=s,
@@ -198,14 +276,6 @@ class AddSuiteFormTest(case.DBTestCase):
             [
                 c[1].attrs["data-product-id"]
                 for c in f.fields["product"].choices
-                if c[0]
-                ],
-            [case.product.id]
-            )
-        self.assertEqual(
-            [
-                c[1].attrs["data-product-id"]
-                for c in f.fields["cases"].choices
                 if c[0]
                 ],
             [case.product.id]

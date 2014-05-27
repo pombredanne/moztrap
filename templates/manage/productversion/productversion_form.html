@@ -17,6 +17,7 @@
     {% block topfields %}{% endblock %}
     {% include "forms/_field.html" with field=form.version %}
     {% include "forms/_field.html" with field=form.codename %}
+    {% block bottomfields %}{% endblock %}
 
     {% comment %}
     <section class="userselect details{% if form.team.errors or form.team.value %} open{% endif %}">
@@ -30,6 +31,8 @@
 
     <div class="form-actions">
       <button type="submit">save productversion</button>
+      {% url 'manage_productversions' as manage_url %}
+      {% include "manage/_cancel_button.html" with manage_url=manage_url %}
     </div>
   </form>
 </section>

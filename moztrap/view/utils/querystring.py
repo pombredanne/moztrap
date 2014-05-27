@@ -6,7 +6,6 @@ import urllib
 import urlparse
 
 
-
 def update_querystring(url, **kwargs):
     """
     Updates the querystring of ``url`` with keys/values in ``kwargs``,
@@ -22,5 +21,12 @@ def update_querystring(url, **kwargs):
             del queryargs[k]
         else:
             queryargs[k] = v
+
+    # make sure all the values (such as filter params) are encoded to utf-8
+    # in case they have non-ascii characters in them.
+    for k, v in queryargs.items():
+        if isinstance(v, list):
+            queryargs[k] = [x.encode("utf-8") for x in v]
+
     parts[4] = urllib.urlencode(queryargs, doseq=True)
     return urlparse.urlunparse(parts)

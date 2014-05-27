@@ -2,6 +2,8 @@
 Parser for text format for bulk test case entry.
 
 """
+
+
 class ParsingError(Exception):
     pass
 
@@ -68,6 +70,9 @@ class BulkParser(object):
     def begin(self, lc, orig, data):
         """The start state."""
         if lc.startswith("test that "):
+            if len(orig) > 200:
+                data.append({})
+                raise ParsingError("Title should have at most 200 chracters, '%s...'" % orig[0:50])
             data.append({"name": orig})
             return self.description
         raise ParsingError("Expected 'Test that ...', not '%s'" % orig)
@@ -89,13 +94,15 @@ class BulkParser(object):
 
     def instruction(self, lc, orig, data):
         """Expecting to encounter a step instruction."""
+        if lc.startswith("when ") or lc.startswith("and when ") or lc.startswith("test that "):
+            return self.expectedresult(lc, orig, data)
         if lc.startswith("then "):
             data[-1]["steps"][-1]["expected"] = [orig]
             return self.expectedresult
         data[-1]["steps"][-1]["instruction"].append(orig)
         return self.instruction
     instruction.keys = ["then "]
-    instruction.expect_end = False
+    instruction.expect_end = True
 
 
     def expectedresult(self, lc, orig, data):
@@ -104,6 +111,9 @@ class BulkParser(object):
             self._orig_and = orig
             return self.after_and
         if lc.startswith("test that "):
+            if len(orig) > 200:
+                data.append({})
+                raise ParsingError("Title should have at most 200 chracters, '%s...'" % orig[0:50])
             data.append({"name": orig})
             return self.description
         if lc.startswith("when ") or lc.startswith("and when "):

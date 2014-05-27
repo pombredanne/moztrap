@@ -2,6 +2,7 @@
 
 {% load permissions %}
 
+{% block location %}Edit Profile{% endblock %}
 {% block content %}
 
 <section id="editprofile" class="manage listpage">
@@ -27,6 +28,6 @@
 </section>
 
 <div class="form-actions">
-  <a href="{% url manage_profiles %}" class="done-link">Done Editing</a>
+  <a href="{% url 'manage_profiles' %}" class="done-link">Done Editing</a>
 </div>
 {% endblock content %}

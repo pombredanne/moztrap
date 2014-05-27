@@ -23,7 +23,8 @@ from ..lists import filters
 class NonFieldErrorList(ErrorList):
     """A custom ErrorList for non-field errors with "nonfield" HTML class."""
     def as_ul(self):
-        if not self: return u''
+        if not self:
+            return u''
         return mark_safe(u'<ul class="errorlist nonfield">%s</ul>'
                 % ''.join([u'<li>%s</li>' % conditional_escape(force_unicode(e)) for e in self]))
 
@@ -186,9 +187,6 @@ class FilteredSelectMultiple(MTSelectMultiple):
     """
     template_name = (
         "forms/widgets/filtered_select_multiple/_filtered_select_multiple.html")
-    choice_template_name = (
-        "forms/widgets/filtered_select_multiple/"
-        "_filtered_select_multiple_item.html")
     listordering_template_name = (
         "forms/widgets/filtered_select_multiple/"
         "_filtered_select_multiple_listordering.html")
@@ -211,7 +209,10 @@ class FilteredSelectMultiple(MTSelectMultiple):
     def get_context_data(self):
         ctx = super(FilteredSelectMultiple, self).get_context_data()
         ctx["filters"] = filters.FilterSet(self.filters).bind(MultiValueDict())
-        ctx["choice_template"] = self.choice_template_name
+        try:
+            ctx["choice_template"] = self.choice_template_name
+        except AttributeError:
+            pass
         ctx["listordering_template"] = self.listordering_template_name
         return ctx
 
@@ -315,6 +316,28 @@ class MTModelChoiceField(forms.ModelChoiceField):
         if self.custom_choice_attrs is not None:
             return self.custom_choice_attrs(obj)
         return {}
+
+
+
+class MTChoiceField(forms.ChoiceField):
+
+    widget = MTSelect
+
+    def valid_value(self, value):
+        """
+        Skip validation of values.
+
+        The available choices are loaded on the client side, so we have
+        nothing to check.
+
+        """
+        return True
+
+
+
+class MTMultipleChoiceField(forms.MultipleChoiceField,
+                                 MTChoiceField):
+    widget = MTSelectMultiple
 
 
 

@@ -15,6 +15,7 @@ from moztrap import model
 
 from moztrap.view.filters import CaseVersionFilterSet
 from moztrap.view.lists import decorators as lists
+from moztrap.view.lists.filters import PinnedFilters
 from moztrap.view.users.decorators import permission_required
 from moztrap.view.utils.ajax import ajax
 from moztrap.view.utils.auth import login_maybe_required
@@ -28,7 +29,7 @@ from . import forms
 @never_cache
 @login_maybe_required
 @lists.actions(
-    model.Case,
+    model.CaseVersion,
     ["delete"],
     permission="library.manage_cases",
     fall_through=True)
@@ -46,7 +47,13 @@ def cases_list(request):
         request,
         "manage/case/cases.html",
         {
-            "caseversions": model.CaseVersion.objects.select_related("case"),
+            "caseversions": model.CaseVersion.objects.select_related(
+                "case",
+                "productversion",
+                "productversion__product",
+                ).prefetch_related(
+                    "tags",
+                    ),
             }
         )
 
@@ -87,12 +94,16 @@ def case_add(request):
         if form.is_valid():
             case = form.save()
             messages.success(
-                request, "Test case '{0}' added.".format(
+                request, u"Test case '{0}' added.".format(
                     case.versions.all()[0].name)
                 )
             return redirect("manage_cases")
     else:
-        form = forms.AddCaseForm(user=request.user, initial=request.GET)
+        pf = PinnedFilters(request.COOKIES)
+        form = forms.AddCaseForm(
+            user=request.user,
+            initial=pf.fill_form_querystring(request.GET).dict(),
+            )
     return TemplateResponse(
         request,
         "manage/case/add_case.html",
@@ -113,12 +124,13 @@ def case_add_bulk(request):
         if form.is_valid():
             cases = form.save()
             messages.success(
-                request, "Added {0} test case{1}.".format(
+                request, u"Added {0} test case{1}.".format(
                     len(cases), "" if len(cases) == 1 else "s")
                 )
             return redirect("manage_cases")
     else:
-        form = forms.AddBulkCaseForm(user=request.user)
+        pf = PinnedFilters(request.COOKIES)
+        form = forms.AddBulkCaseForm(user=request.user, initial=pf.fill_form_querystring(request.GET))
     return TemplateResponse(
         request,
         "manage/case/add_case_bulk.html",
@@ -142,8 +154,9 @@ def caseversion_edit(request, caseversion_id):
             user=request.user)
         cv = form.save_if_valid()
         if cv is not None:
-            messages.success(request, "Saved '{0}'.".format(cv.name))
-            return redirect("manage_cases")
+            messages.success(request, u"Saved '{0}'.".format(cv.name))
+            pre_page = request.GET.get('from', "manage_cases")
+            return redirect(pre_page)
     else:
         form = forms.EditCaseVersionForm(
             instance=caseversion, user=request.user)
@@ -179,11 +192,12 @@ def caseversion_clone(request, caseversion_id):
             overrides={
                 "productversion": productversion,
                 "name": caseversion.name
-                }
+                },
+            user=request.user
             )
         messages.success(
             request,
-            "Created new version of '{0}' for {1}.".format(
+            u"Created new version of '{0}' for {1}.".format(
                 caseversion.name, productversion)
             )
 

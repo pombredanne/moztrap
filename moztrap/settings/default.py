@@ -11,14 +11,14 @@ if DEBUG:
     MIDDLEWARE_CLASSES.insert(
         0, "moztrap.debug.middleware.AjaxTracebackMiddleware")
 
-    LOGGING["handlers"]["console"] = {
-        "level": "DEBUG",
-        "class": "logging.StreamHandler",
-        }
-
-    LOGGING["root"] = {"handlers": ["console"]}
-
 try:
     HMAC_KEYS
 except NameError:
     HMAC_KEYS = {"default": SECRET_KEY}
+
+# LOGGING["handlers"]["null"] = {
+#     'level': 'DEBUG',
+#     'class': 'django.utils.log.NullHandler',
+#     }
+#
+# LOGGING["root"] = {"handlers": ["null"]}

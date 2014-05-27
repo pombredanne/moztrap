@@ -2,11 +2,16 @@
 Utilities for filtering querysets in a view.
 
 """
+
 from collections import namedtuple
 from functools import wraps
+import json
+import urlparse
+import operator
 
 from django.core.urlresolvers import reverse, resolve
 from django.utils.datastructures import MultiValueDict
+from django.db.models import Q
 
 
 
@@ -57,6 +62,7 @@ def filter(ctx_name, filters=None, filterset_class=None):
     if filterset_class is None:
         filterset_class = FilterSet
     filterset = filterset_class(filters)
+
     def decorator(view_func):
         @wraps(view_func)
         def _wrapped_view(request, *args, **kwargs):
@@ -65,7 +71,7 @@ def filter(ctx_name, filters=None, filterset_class=None):
                 ctx = response.context_data
             except AttributeError:
                 return response
-            bfs = filterset.bind(request.GET)
+            bfs = filterset.bind(request.GET, request.COOKIES)
             ctx[ctx_name] = bfs.filter(ctx[ctx_name])
             ctx["filters"] = bfs
             return response
@@ -115,6 +121,41 @@ class BoundFilterSet(object):
 
 
 
+class PinnedFilters(object):
+    """An object to manage pinned filters saved as cookies in the session."""
+
+    def __init__(self, COOKIES):
+        self.cookie_prefix = "moztrap-filter-"
+        self.cookies = {}
+        if COOKIES:
+            for k in COOKIES.keys():
+                if k.startswith(self.cookie_prefix):
+                    filter_key = k[len(self.cookie_prefix):]
+                    pinned_filters = json.loads(
+                        urlparse.unquote(COOKIES.get(k)))
+                    self.cookies[filter_key] = pinned_filters
+
+
+    def extend_filters(self, filters):
+        # pinned filters are stored in session cookies.  Add them to the list
+        # of other filters in the querystring.
+        for k, v in self.cookies.items():
+            filters.setdefault(k, []).extend(v)
+        return filters
+
+
+    def fill_form_querystring(self, GET):
+        # pinned filters are stored in session cookies.  Fill in, if not
+        # already set.  Don't want to overwrite or add to existing values
+        # and only if there's a single matching cookie value
+        new_filters = GET.copy()
+        for k, v in self.cookies.items():
+            if not k in new_filters and len(v) == 1:
+                new_filters[k] = v[0]
+        return new_filters
+
+
+
 class FilterSet(object):
     """A set of possible filters on a queryset."""
     # subclasses can have preset filters
@@ -136,7 +177,7 @@ class FilterSet(object):
         self.prefix = prefix
 
 
-    def bind(self, GET=None):
+    def bind(self, GET=None, COOKIES=None):
         """
         Return BoundFilterSet (or subclass) for given filter data.
 
@@ -146,12 +187,20 @@ class FilterSet(object):
 
         """
         GET = GET or MultiValueDict()
+
+        query_filters = dict(
+            (k[len(self.prefix):], GET.getlist(k)) for k in GET.keys()
+            if k.startswith(self.prefix)
+            )
+
+        # pinned filters are stored in session cookies.  Add them to the list
+        # of other filters in the querystring.
+        if COOKIES:
+            PinnedFilters(COOKIES).extend_filters(query_filters)
+
         return self.bound_class(
             self,
-            dict(
-                (k[len(self.prefix):], GET.getlist(k)) for k in GET.keys()
-                if k.startswith(self.prefix)
-                )
+            query_filters,
             )
 
 
@@ -211,6 +260,24 @@ class BoundFilter(object):
 
 
     @property
+    def switchable(self):
+        """Pass-through to Filter switchable."""
+        return self._filter.switchable
+
+
+    @property
+    def toggle(self):
+        """Pass-through to Filter toggle."""
+        return self._filter.toggle
+
+
+    @property
+    def is_default_and(self):
+        """Pass-through to Filter is_default_and."""
+        return self._filter.is_default_and
+
+
+    @property
     def name(self):
         """Pass-through to Filter name."""
         return self._filter.name
@@ -236,9 +303,14 @@ class Filter(object):
     """Encapsulates the filtering possibilities for a single field."""
     # A filter-type class; for use in CSS styling of the filter input
     cls = ""
+    # Default filtering logic; True for "AND", False for "OR"
+    is_default_and = False
+    # switch OR(AND) to AND(OR) filtering
+    toggle = False
 
 
-    def __init__(self, name, lookup=None, key=None, coerce=None):
+    def __init__(self, name, lookup=None, key=None, coerce=None,
+        extra_filters=None, switchable=False):
         """
         Instantiate the Filter.
 
@@ -248,19 +320,33 @@ class Filter(object):
         ``key`` default to ``name`` if not provided. ``coerce`` is a
         one-argument function to coerce values to the correct type for this
         filter; it may raise ValueError or TypeError.
+        ``extra_filters`` is a dict containing any extra filters that should be
+        attached to this filter.  For example, you might want to add
+        ``is_latest`` to a ``result status`` filter.
 
         """
         self.name = name
         self.lookup = name if lookup is None else lookup
         self.key = name if key is None else key
+        self.extra_filters = {} if extra_filters is None else extra_filters
         self._coerce_func = coerce
+        self.switchable = switchable
 
 
     def filter(self, queryset, values):
         """Given queryset and selected values, return filtered queryset."""
         if values:
-            return queryset.filter(
-                **{"{0}__in".format(self.lookup): values}).distinct()
+            if self.toggle:
+                for value in values:
+                    queryset = queryset.filter(**{"{0}__in".format(self.lookup): [value]})
+                queryset = queryset.filter(**self.extra_filters)
+            else:
+                filters = {"{0}__in".format(self.lookup): values}
+                filters.update(self.extra_filters)
+                queryset = queryset.filter(**filters)
+
+            return queryset.distinct()
+
         return queryset
 
 
@@ -271,6 +357,8 @@ class Filter(object):
 
     def values(self, data):
         """Given data dict, return list of selected values."""
+        if self.switchable:
+            self.toggle = True if data.get(self.key+'-switch', None) else False
         return [v for v in map(self.coerce, data.get(self.key, []))]
 
 
@@ -340,6 +428,8 @@ class ModelFilter(BaseChoicesFilter):
     alternative ``coerce`` function should be provided at instantiation.
 
     """
+
+
     def __init__(self, *args, **kwargs):
         """
         Looks for ``queryset`` and ``label`` keyword arguments.
@@ -352,20 +442,33 @@ class ModelFilter(BaseChoicesFilter):
         """
         self.queryset = kwargs.pop("queryset")
         self.label_func = kwargs.pop("label", lambda o: unicode(o))
+        self._opts = None
         kwargs.setdefault("coerce", int)
         super(ModelFilter, self).__init__(*args, **kwargs)
+
+
+    def options(self, values):
+        """Given list of selected values, return options to display."""
+        return self._opts
 
 
     def get_choices(self):
         """Get the options for this filter."""
         # always clone to get new data; filter instances are persistent
-        return [(obj.pk, self.label_func(obj)) for obj in self.queryset.all()]
+        self._opts = [(obj.pk, self.label_func(obj)) for obj in self.queryset.all()]
+        return self._opts
 
 
 
 class KeywordExactFilter(Filter):
     """Allows user to input arbitrary filter values; no pre-set options list."""
     cls = "keyword"
+
+
+    def __init__(self, *args, **kwargs):
+        if kwargs.get("switchable") is None:
+            kwargs.setdefault("switchable", True)
+        super(KeywordExactFilter, self).__init__(*args, **kwargs)
 
 
     def options(self, values):
@@ -376,15 +479,18 @@ class KeywordExactFilter(Filter):
 
 class KeywordFilter(KeywordExactFilter):
     """Values are ANDed in a 'contains' search of the field"""
+    is_default_and = True
 
 
     def filter(self, queryset, values):
         """Values are ANDed in a 'contains' search of the field text."""
-        for value in values:
-            queryset = queryset.filter(
-                **{"{0}__icontains".format(self.lookup): value})
-
         if values:
-            return queryset.distinct()
+            filters = Q()
+            op_func = operator.__or__ if self.toggle else operator.__and__
+
+            for value in values:
+                filters = op_func(filters, Q(**{"{0}__icontains".format(self.lookup): value}))
+
+            return queryset.filter(filters).distinct()
 
         return queryset

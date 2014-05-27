@@ -2,7 +2,7 @@
             indent:     4,
             confusion:  true,
             regexp:     true */
-/*global    ich, jQuery, confirm */
+/*global    ich, jQuery, confirm, URI */
 
 var MT = (function (MT, $) {
 
@@ -18,6 +18,7 @@ var MT = (function (MT, $) {
                 option_sel: 'option',
                 multiselect_widget_bool: false,
                 optional: false,
+                no_default: false,
                 callback: null
             },
             options = $.extend({}, defaults, opts),
@@ -38,16 +39,16 @@ var MT = (function (MT, $) {
                         filter = thisFilter.closest('.filter-item').find('.onoffswitch').text().toLowerCase(),
                         excludeThisFilter = false;
 
-                    if (type === 'status') {
-                        if (!(items.find('.status span').filter(function () { return $(this).text().toLowerCase() === filter; }).length)) {
-                            excludeThisFilter = true;
-                        }
-                    } else if (type === 'tag') {
+                    if (type === 'tag') {
                         if (!(items.find('.tags a').filter(function () { return $(this).text().toLowerCase() === filter; }).length)) {
                             excludeThisFilter = true;
                         }
                     } else if (type === 'author') {
                         if (!(items.find('.author span').filter(function () { return $(this).text().toLowerCase() === filter; }).length)) {
+                            excludeThisFilter = true;
+                        }
+                    } else if (type === 'priority') {
+                        if (!(items.find('.priority span').filter(function () { return $(this).text().toLowerCase() === filter; }).length)) {
                             excludeThisFilter = true;
                         }
                     } else {
@@ -69,9 +70,12 @@ var MT = (function (MT, $) {
                     newopts = allopts.clone().filter(function () {
                         return $(this).data(options.data_attr) === key;
                     });
-                if (options.optional && key) {
+                if ((options.optional || options.no_default) && key) {
                     target.find(options.option_sel).filter(function () { return $(this).val(); }).remove();
                     target.append(newopts);
+                    if (options.no_default && newopts.length === 1) {
+                        newopts.attr("selected", true);
+                    }
                 } else {
                     target.html(newopts);
                 }

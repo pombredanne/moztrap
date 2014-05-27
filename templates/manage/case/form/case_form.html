@@ -16,6 +16,7 @@
 
   {% block caseversions %}
   {% endblock caseversions %}
+  {% include "_markdownlink.html" with field_support="description, instruction and expected fields support" %}
 
   <form method="POST" enctype="multipart/form-data" id="{% block form-id %}{% endblock form-id %}" class="manage-form case-form">
     {% csrf_token %}
@@ -27,8 +28,9 @@
       {% include "forms/_field.html" with field=form.productversion label="Version" %}
       {% include "forms/_field.html" with field=form.and_later_versions %}
       {% if user|has_perm:"library.manage_suite_cases" %}
-      {% include "forms/_field.html" with field=form.initial_suite label="Suite" %}
+      {% include "forms/_field.html" with field=form.suite label="Suite" %}
       {% include "forms/_field.html" with field=form.idprefix label="ID Prefix" %}
+      {% include "forms/_field.html" with field=form.priority label="Priority" %}
       {% endif %}
     {% endblock versioningform %}
     </div>
@@ -40,6 +42,8 @@
     <div class="form-actions">
       {% include "forms/_field.html" with field=form.status %}
       <button type="submit" name="save">save test case</button>
+      {% url 'manage_cases' as manage_url %}
+      {% include "manage/_cancel_button.html" with manage_url=manage_url %}
     </div>
   </form>
 

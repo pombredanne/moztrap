@@ -201,8 +201,34 @@ class SetEnvironmentTest(case.view.AuthenticatedViewTestCase,
             )
 
 
+    def test_set_environment_and_build(self):
+        """Selecting an environment and build redirects to run view for that run/env."""
+        self.add_perm("execute")
+        self.testrun.environments.add(*self.envs)
+        self.testrun.is_series = True
+        self.testrun.save()
 
-class RunTestsTest(case.view.AuthenticatedViewTestCase,
+        cat = self.model.Category.objects.get()
+
+        form = self.get().forms["runtests-environment-form"]
+        form["category_{0}".format(cat.id)] = self.envs[0].elements.get().id
+        form["build"] = "rahbuild"
+
+        res = form.submit(status=302)
+
+        # we now need to find the run that was created for the series
+        # by having the old run as its series value.
+        newrun = self.F.model.Run.objects.get(series=self.testrun)
+        self.assertRedirects(
+            res,
+            reverse(
+                "runtests_run",
+                kwargs={"run_id": newrun.id, "env_id": self.envs[0].id})
+        )
+
+
+
+class RunTestsTest(case.view.ListViewTestCase,
                    case.view.NoCacheTest,
                    ):
     """Tests for runtests view."""
@@ -222,6 +248,12 @@ class RunTestsTest(case.view.AuthenticatedViewTestCase,
         return reverse(
             "runtests_run",
             kwargs={"run_id": self.testrun.id, "env_id": self.envs[0].id})
+
+
+    def factory(self, **kwargs):
+        """Create a result for inherited tests."""
+        rcv = self.create_rcv(caseversion__name="Foo Bar")
+        return self.create_result(runcaseversion=rcv)
 
 
     def create_rcv(self, **kwargs):
@@ -401,9 +433,60 @@ class RunTestsTest(case.view.AuthenticatedViewTestCase,
             params={"sortfield": "name"}, status=200).forms[
             "test-status-form-{0}".format(rcv.id)]
 
-        res = form.submit(name="action-finishsucceed", index=0, status=302)
+        res = form.submit(name="action-result_pass", index=0, status=302)
 
         self.assertRedirects(res, self.url + "?sortfield=name")
+
+
+    def test_sort_by_status(self):
+        """
+        Can sort by status.  Honors status by ANY user for the env/test.
+
+        Ascending puts pending at the top, since they have no status.
+        """
+        user2 = self.F.UserFactory()
+        t1 = self.create_rcv(caseversion__name="t1")
+        t2 = self.create_rcv(caseversion__name="t2")
+        t3 = self.create_rcv(caseversion__name="t3")
+        t4 = self.create_rcv(caseversion__name="t4")
+        t5 = self.create_rcv(caseversion__name="t5")
+        t6 = self.create_rcv(caseversion__name="t6")
+        self.create_result(runcaseversion=t1, status="started")
+        self.create_result(runcaseversion=t2, status="blocked")
+        self.create_result(runcaseversion=t3, status="failed", tester=user2)
+        self.create_result(runcaseversion=t4, status="invalidated")
+        self.create_result(runcaseversion=t5, status="passed")
+        self.create_result(runcaseversion=t6, status="skipped")
+
+        res = self.get(
+            params={"sortfield": "current_result", "sortdirection": "asc"})
+
+        self.assertOrderInList(res, "t1", "t2", "t3", "t4", "t5", "t6")
+
+
+    def test_sort_by_status_env_specific(self):
+        """
+        Can sort by status.  Specific to env in question.
+
+        If rcv has result for different env, it's ignored
+        """
+        user2 = self.F.UserFactory()
+        t1 = self.create_rcv(caseversion__name="t1")
+        t2 = self.create_rcv(caseversion__name="t2")
+        self.create_result(runcaseversion=t1, status="started")
+        self.create_result(runcaseversion=t2, status="failed", tester=user2)
+
+        # result for different env that should be ignored in sort
+        self.create_result(
+            runcaseversion=t1,
+            environment=self.envs[1],
+            status="passed",
+            )
+
+        res = self.get(
+            params={"sortfield": "current_result", "sortdirection": "asc"})
+
+        self.assertOrderInList(res, "t1", "t2")
 
 
     def test_description(self):
@@ -417,7 +500,7 @@ class RunTestsTest(case.view.AuthenticatedViewTestCase,
         form = self.get(status=200).forms["test-status-form-{0}".format(rcv.id)]
 
         res = form.submit(
-            name="action-finishsucceed",
+            name="action-result_pass",
             index=0,
             headers={"X-Requested-With": "XMLHttpRequest"},
             status=200
@@ -456,12 +539,12 @@ class RunTestsTest(case.view.AuthenticatedViewTestCase,
 
         form = self.get(status=200).forms["test-status-form-{0}".format(rcv.id)]
 
-        # we patched the actions dictionary so "finishsucceed" will not be valid
-        res = form.submit(name="action-finishsucceed", index=0, status=302)
+        # we patched the actions dictionary so "result_pass" will not be valid
+        res = form.submit(name="action-result_pass", index=0, status=302)
 
         self.assertRedirects(res, self.url)
 
-        res.follow().mustcontain("finishsucceed is not a valid action")
+        res.follow().mustcontain("result_pass is not a valid action")
 
 
     @patch("moztrap.view.runtests.views.ACTIONS", {})
@@ -471,15 +554,15 @@ class RunTestsTest(case.view.AuthenticatedViewTestCase,
 
         form = self.get(status=200).forms["test-status-form-{0}".format(rcv.id)]
 
-        # we patched the actions dictionary so "finishsucceed" will not be valid
+        # we patched the actions dictionary so "result_pass" will not be valid
         res = form.submit(
-            name="action-finishsucceed", index=0,
+            name="action-result_pass", index=0,
             headers={"X-Requested-With": "XMLHttpRequest"}, status=200)
 
         self.assertEqual(res.json["html"], "")
         self.assertEqual(res.json["no_replace"], True)
         self.assertEqual(
-            res.json["messages"][0]["message"], "finishsucceed is not a valid action.")
+            res.json["messages"][0]["message"], "result_pass is not a valid action.")
 
 
     def test_post_bad_rcv_id_redirect(self):
@@ -490,7 +573,7 @@ class RunTestsTest(case.view.AuthenticatedViewTestCase,
 
         rcv.delete()
 
-        res = form.submit(name="action-finishsucceed", index=0, status=302)
+        res = form.submit(name="action-result_pass", index=0, status=302)
 
         self.assertRedirects(res, self.url)
 
@@ -506,7 +589,7 @@ class RunTestsTest(case.view.AuthenticatedViewTestCase,
         rcv.delete()
 
         res = form.submit(
-            name="action-finishsucceed", index=0,
+            name="action-result_pass", index=0,
             headers={"X-Requested-With": "XMLHttpRequest"}, status=200)
 
         self.assertEqual(res.json["html"], "")
@@ -526,7 +609,7 @@ class RunTestsTest(case.view.AuthenticatedViewTestCase,
 
         result.delete()
 
-        res = form.submit(name="action-finishsucceed", index=0, status=302)
+        res = form.submit(name="action-result_pass", index=0, status=302)
 
         self.assertRedirects(res, self.url)
 
@@ -545,52 +628,52 @@ class RunTestsTest(case.view.AuthenticatedViewTestCase,
         result.delete()
 
         res = form.submit(
-            name="action-finishsucceed", index=0,
+            name="action-result_pass", index=0,
             headers={"X-Requested-With": "XMLHttpRequest"}, status=200)
 
         self.assertElement(
-            res.json["html"], "button", attrs={"name": "action-restart"})
+            res.json["html"], "button", attrs={"name": "action-start"})
 
 
     def test_pass_case(self):
-        """Submit a "finishsucceed" action for a case; redirects."""
+        """Submit a "result_pass" action for a case; redirects."""
         result = self.create_result(status="started")
         rcv = result.runcaseversion
 
         form = self.get(status=200).forms["test-status-form-{0}".format(rcv.id)]
 
-        with patch("moztrap.model.execution.models.utcnow") as mock_utcnow:
-            mock_utcnow.return_value = datetime(2012, 2, 3)
-            res = form.submit(name="action-finishsucceed", index=0, status=302)
+        res = form.submit(name="action-result_pass", index=0, status=302)
 
         self.assertRedirects(res, self.url)
 
-        result = rcv.results.get(tester=self.user, environment=self.envs[0])
+        result = rcv.results.get(
+            tester=self.user,
+            environment=self.envs[0],
+            is_latest=True)
 
         self.assertEqual(result.status, result.STATUS.passed)
-        self.assertEqual(result.completed, datetime(2012, 2, 3))
 
 
     def test_pass_case_ajax(self):
-        """Ajax post a "finishsucceed" action; returns HTML snippet."""
+        """Ajax post a "result_pass" action; returns HTML snippet."""
         result = self.create_result(status="started")
         rcv = result.runcaseversion
 
         form = self.get(status=200).forms["test-status-form-{0}".format(rcv.id)]
 
         res = form.submit(
-            name="action-finishsucceed",
+            name="action-result_pass",
             index=0,
             headers={"X-Requested-With": "XMLHttpRequest"},
             status=200
             )
 
         self.assertElement(
-            res.json["html"], "button", attrs={"name": "action-restart"})
+            res.json["html"], "button", attrs={"name": "action-start"})
 
 
     def test_invalidate_case(self):
-        """Submit a "finishinvalidate" action for a case; redirects."""
+        """Submit a "result_invalid" action for a case; redirects."""
         result = self.create_result(status="started")
         rcv = result.runcaseversion
 
@@ -599,22 +682,22 @@ class RunTestsTest(case.view.AuthenticatedViewTestCase,
 
         form["comment"] = "it ain't valid"
 
-        with patch("moztrap.model.execution.models.utcnow") as mock_utcnow:
-            mock_utcnow.return_value = datetime(2012, 2, 3)
-            res = form.submit(
-                name="action-finishinvalidate", index=0, status=302)
+        res = form.submit(
+            name="action-result_invalid", index=0, status=302)
 
         self.assertRedirects(res, self.url)
 
-        result = rcv.results.get(tester=self.user, environment=self.envs[0])
+        result = rcv.results.get(
+            tester=self.user,
+            environment=self.envs[0],
+            is_latest=True)
 
         self.assertEqual(result.status, result.STATUS.invalidated)
         self.assertEqual(result.comment, "it ain't valid")
-        self.assertEqual(result.completed, datetime(2012, 2, 3))
 
 
     def test_invalidate_case_ajax(self):
-        """Ajax post a "finishinvalidate" action; returns HTML snippet."""
+        """Ajax post a "result_invalid" action; returns HTML snippet."""
         result = self.create_result(status="started")
         rcv = result.runcaseversion
 
@@ -624,43 +707,18 @@ class RunTestsTest(case.view.AuthenticatedViewTestCase,
         form["comment"] = "it ain't valid"
 
         res = form.submit(
-            name="action-finishinvalidate",
+            name="action-result_invalid",
             index=0,
             headers={"X-Requested-With": "XMLHttpRequest"},
             status=200
             )
 
         self.assertElement(
-            res.json["html"], "button", attrs={"name": "action-restart"})
+            res.json["html"], "button", attrs={"name": "action-start"})
 
 
     def test_fail_case(self):
-        """Submit a "finishinvalidate" action for a case; redirects."""
-        step = self.F.CaseStepFactory.create(number=1)
-        rcv = self.create_rcv(caseversion=step.caseversion)
-        self.create_result(status="started", runcaseversion=rcv)
-
-        form = self.get(status=200).forms[
-            "test-fail-form-{0}-1".format(rcv.id)]
-
-        form["comment"] = "it didn't pass"
-
-        with patch("moztrap.model.execution.models.utcnow") as mock_utcnow:
-            mock_utcnow.return_value = datetime(2012, 2, 3)
-            res = form.submit(
-                name="action-finishfail", index=0, status=302)
-
-        self.assertRedirects(res, self.url)
-
-        result = rcv.results.get(tester=self.user, environment=self.envs[0])
-
-        self.assertEqual(result.status, result.STATUS.failed)
-        self.assertEqual(result.comment, "it didn't pass")
-        self.assertEqual(result.completed, datetime(2012, 2, 3))
-
-
-    def test_fail_case_ajax(self):
-        """Ajax post a "finishinvalidate" action; returns HTML snippet."""
+        """Submit a "result_invalid" action for a case; redirects."""
         step = self.F.CaseStepFactory.create(number=1)
         rcv = self.create_rcv(caseversion=step.caseversion)
         self.create_result(status="started", runcaseversion=rcv)
@@ -671,14 +729,39 @@ class RunTestsTest(case.view.AuthenticatedViewTestCase,
         form["comment"] = "it didn't pass"
 
         res = form.submit(
-            name="action-finishfail",
+            name="action-result_fail", index=0, status=302)
+
+        self.assertRedirects(res, self.url)
+
+        result = rcv.results.get(
+            tester=self.user,
+            environment=self.envs[0],
+            is_latest=True)
+
+        self.assertEqual(result.status, result.STATUS.failed)
+        self.assertEqual(result.comment, "it didn't pass")
+
+
+    def test_fail_case_ajax(self):
+        """Ajax post a "result_invalid" action; returns HTML snippet."""
+        step = self.F.CaseStepFactory.create(number=1)
+        rcv = self.create_rcv(caseversion=step.caseversion)
+        self.create_result(status="started", runcaseversion=rcv)
+
+        form = self.get(status=200).forms[
+            "test-fail-form-{0}-1".format(rcv.id)]
+
+        form["comment"] = "it didn't pass"
+
+        res = form.submit(
+            name="action-result_fail",
             index=0,
             headers={"X-Requested-With": "XMLHttpRequest"},
             status=200
             )
 
         self.assertElement(
-            res.json["html"], "button", attrs={"name": "action-restart"})
+            res.json["html"], "button", attrs={"name": "action-start"})
 
 
     def test_restart_case(self):
@@ -688,16 +771,17 @@ class RunTestsTest(case.view.AuthenticatedViewTestCase,
 
         form = self.get(status=200).forms["restart-form-{0}".format(rcv.id)]
 
-        with patch("moztrap.model.execution.models.utcnow") as mock_utcnow:
-            mock_utcnow.return_value = datetime(2012, 2, 3)
-            res = form.submit(name="action-restart", index=0, status=302)
+        res = form.submit(name="action-start", index=0, status=302)
 
         self.assertRedirects(res, self.url)
 
-        result = rcv.results.get(tester=self.user, environment=self.envs[0])
+        result = rcv.results.get(
+            tester=self.user,
+            environment=self.envs[0],
+            is_latest=True,
+            )
 
         self.assertEqual(result.status, result.STATUS.started)
-        self.assertEqual(result.started, datetime(2012, 2, 3))
 
 
     def test_restart_case_ajax(self):
@@ -708,14 +792,14 @@ class RunTestsTest(case.view.AuthenticatedViewTestCase,
         form = self.get(status=200).forms["restart-form-{0}".format(rcv.id)]
 
         res = form.submit(
-            name="action-restart",
+            name="action-start",
             index=0,
             headers={"X-Requested-With": "XMLHttpRequest"},
             status=200
             )
 
         self.assertElement(
-            res.json["html"], "button", attrs={"name": "action-finishsucceed"})
+            res.json["html"], "button", attrs={"name": "action-result_pass"})
 
 
     def test_parameter_defaults(self):
@@ -729,11 +813,11 @@ class RunTestsTest(case.view.AuthenticatedViewTestCase,
         # prevents any comment parameter from being submitted
         del form.fields["comment"]
 
-        res = form.submit(name="action-finishinvalidate", index=0, status=302)
+        res = form.submit(name="action-result_invalid", index=0, status=302)
 
         self.assertRedirects(res, self.url)
 
-        result = self.refresh(result)
+        result = rcv.results.get(is_latest=True)
 
         self.assertEqual(result.status, result.STATUS.invalidated)
         self.assertEqual(result.comment, "")

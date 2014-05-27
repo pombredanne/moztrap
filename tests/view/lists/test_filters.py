@@ -2,6 +2,7 @@
 Tests for queryset-filtering.
 
 """
+from django.http import QueryDict
 from mock import Mock
 
 from django.template.response import TemplateResponse
@@ -212,6 +213,21 @@ class FilterSetTest(FiltersTestCase):
 
         self.assertIsInstance(bfs, self.filters.BoundFilterSet)
         self.assertIs(bfs.filterset, fs)
+
+
+    def test_bind_with_cookies(self):
+        """``bind`` method mixes cookies with filters."""
+        fs = self.filters.FilterSet(filters=[self.filters.Filter("one")])
+        COOKIES = {
+            'csrftoken': 'd792db7bb8d4e073dbb3131bf7e9acc4',
+            'moztrap-filter-foo': '%5B%222%22%5D',
+            'djdt': 'hide',
+            'sessionid': '93bb6b0b87594a3b6387692724d67043',
+            }
+        GET = MultiValueDict({"filter-one": ["bub"]})
+
+        bfs = fs.bind(GET=GET, COOKIES=COOKIES)
+        self.assertEqual(bfs.data, {"foo": [u"2"], "one": ["bub"]})
 
 
     def test_bound_class(self):
@@ -466,6 +482,23 @@ class FilterTest(FiltersTestCase):
         self.assertEqual(qs2, qs.filter.return_value.distinct.return_value)
 
 
+    def test_filter_toggle(self):
+        "Switches from ORed to ANDed filtering"
+        f = self.filters.Filter("name", lookup="lookup", switchable=True)
+
+        f.values({"name-switch": ["on"]})
+        self.assertTrue(f.toggle)
+
+        qs = Mock()
+        qs2 = f.filter(qs, ["1", "2"])
+
+        qs.filter.assert_called_with(lookup__in=["1"])
+        qs.filter.return_value.filter.assert_called_with(lookup__in=["2"])
+        qs.filter.return_value.filter.return_value.filter.assert_called_with()
+        qs.filter.return_value.filter.return_value.filter.return_value.distinct.assert_called_with()
+        self.assertEqual(qs2, qs.filter.return_value.filter.return_value.filter.return_value.distinct.return_value)
+
+
     def test_options(self):
         """Base Filter has no options."""
         f = self.filters.Filter("name")
@@ -593,12 +626,9 @@ class KeywordFilterTest(FiltersTestCase):
         qs = Mock()
         qs2 = f.filter(qs, ["one", "two"])
 
-        qs.filter.assert_called_with(name__icontains="one")
-        qs.filter.return_value.filter.assert_called_with(name__icontains="two")
-        qs.filter.return_value.filter.return_value.distinct.assert_called_with()
         self.assertIs(
             qs2,
-            qs.filter.return_value.filter.return_value.distinct.return_value)
+            qs.filter.return_value.distinct.return_value)
 
 
     def test_filter_doesnt_touch_queryset_if_no_values(self):
@@ -610,3 +640,58 @@ class KeywordFilterTest(FiltersTestCase):
 
         self.assertEqual(qs.filter.call_count, 0)
         self.assertEqual(qs.distinct.call_count, 0)
+
+
+
+class PinnedFilterTest(FiltersTestCase):
+    """Tests for pinned filters"""
+
+    def test_empty_cookie(self):
+        pf = self.filters.PinnedFilters(COOKIES=None)
+        self.assertEqual(pf.cookies, {})
+
+    def test_fill_form_querystring(self):
+        """Fill querystring with pinned filter values."""
+        COOKIES = {
+            'csrftoken': 'd792db7bb8d4e073dbb3131bf7e9acc4',
+            'moztrap-filter-foo': '%5B%222%22%5D',
+            'djdt': 'hide',
+            'sessionid': '93bb6b0b87594a3b6387692724d67043',
+            }
+        GET = MultiValueDict({
+            "one": ["bub"],
+            })
+
+        pf = self.filters.PinnedFilters(COOKIES=COOKIES)
+        newfilters = pf.fill_form_querystring(GET=GET)
+        self.assertEqual(
+            newfilters,
+            {"foo": [u"2"], "one": ["bub"]},
+            )
+
+
+    def test_fill_form_querystring_pinned_filter_loses(self):
+        """
+        querystring filters take priority over pinned filters.
+
+        If a filter is pinned, but the user also passes the filter
+        in on the querystring, use the querystring.  Because that's
+        more explicit, and pinned filters are more implicit.
+        """
+        COOKIES = {
+            'csrftoken': 'd792db7bb8d4e073dbb3131bf7e9acc4',
+            'moztrap-filter-foo': '%5B%222%22%5D',
+            'djdt': 'hide',
+            'sessionid': '93bb6b0b87594a3b6387692724d67043',
+            }
+        GET = MultiValueDict({
+            "one": ["bub"],
+            "foo": ["5"],
+            })
+
+        pf = self.filters.PinnedFilters(COOKIES=COOKIES)
+        newfilters = pf.fill_form_querystring(GET=GET)
+        self.assertEqual(
+            newfilters,
+            {"foo": ["5"], "one": ["bub"]},
+            )

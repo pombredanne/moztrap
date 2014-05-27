@@ -71,7 +71,6 @@ var MT = (function (MT, $) {
     // Hijack Manage/Results list sorting and pagination links to use Ajax
     MT.listActionAjax = function (container, trigger) {
         var context = $(container);
-
         context.on('click', trigger, function (e) {
             var url = $(this).attr('href'),
                 replaceList = $(this).closest('.action-ajax-replace');
@@ -81,10 +80,12 @@ var MT = (function (MT, $) {
             $.get(url, function (response) {
                 var newList = $(response.html);
                 replaceList.loadingOverlay('remove');
+                $('html, body').animate({scrollTop: replaceList.offset().top}, 0);
                 if (response.html) {
                     replaceList.replaceWith(newList);
                     newList.find('.details').html5accordion();
                     newList.trigger('after-replace', [newList]);
+                    MT.updatePageForExistingPinnedFilters();
                 }
             });
 
@@ -131,6 +132,87 @@ var MT = (function (MT, $) {
             $(document).off('click.statusDropdown');
         });
     };
+
+    // find the uri of the current list page.  could be one of 2 places.
+    MT.getActionAjaxReplaceUri = function () {
+        // the filter element can store the url in two places,
+        // depending on if it's a form or just an element.  so try both.
+        var actionUrl = $(".action-ajax-replace").attr("action"),
+            dataUrl = $(".action-ajax-replace").data("ajax-update-url"),
+            uri = null;
+
+        if (actionUrl !== undefined && actionUrl !== false) {
+            uri = actionUrl;
+        } else {
+            uri = dataUrl;
+        }
+        return uri;
+    };
+
+    MT.setActionAjaxReplaceUri = function (uri) {
+        var aar = $(".action-ajax-replace"),
+            actionUrl = aar.attr("action"),
+            dataUrl = aar.data("ajax-update-url");
+
+        if (actionUrl !== undefined && actionUrl !== false) {
+            aar.attr("action", uri);
+        } else {
+            aar.data("ajax-update-url", uri);
+        }
+    };
+
+    // Show/hide "share this list" dropdown to display url with filtering
+    // so the user can copy and share it.
+    MT.shareListUrlDropdown = function (container) {
+        var context = $(container),
+            counter = 0;
+
+        context.on('click', '.share-list', function (e) {
+            var shareList = $(this),
+                popup = shareList.find('.share-list-popup'),
+                text = popup.find('.url-text'),
+                uri = MT.getActionAjaxReplaceUri(),
+                // add the protocol and host to the uri stub.
+                url = $(location).attr("protocol") + "//" + $(location).attr("host") + uri;
+
+            text.val(url);
+
+            // if the user is clicking in the text box, then don't close it
+            if ($(e.target).index(text) === -1) {
+                // otherwise, they've clicked elsewhere and we toggle the
+                // dialog open or closed.
+                shareList.toggleClass('open');
+                if (shareList.hasClass('open')) {
+                    // we want to open it.  slide it down and select the text
+                    // to copy.
+                    popup.slideDown('fast');
+                    text.focus();
+                    text.select();
+                    // add the handler that if they click anywhere else on the
+                    // page it will close the dropdown
+                    $(document).on('click.shareDropdown', function (e) {
+                        if ($(e.target).parents().andSelf().index(shareList) === -1) {
+                            if (shareList.hasClass('open')) {
+                                shareList.removeClass('open');
+                                popup.slideUp('fast');
+                            }
+                            $(document).off('click.shareDropdown');
+                        }
+                    });
+                } else {
+                    // clicking the button again will also close the dropdown.
+                    popup.slideUp('fast');
+                    $(document).off('click.shareDropdown');
+                }
+            }
+        });
+    };
+
+    MT.stickPagesizeSettings = function () {
+        $(document).on('click', ".perpage a", function() {
+            $.cookie('moztrap-pagesize', $(this).text(), {path: '/'});
+        });
+    }
 
     return MT;
 

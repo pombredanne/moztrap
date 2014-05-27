@@ -1,5 +1,7 @@
 """Importer for suites and cases from a dictionary."""
 
+import json
+
 from django.db import transaction
 
 from ..core.auth import User
@@ -54,7 +56,7 @@ class Importer(object):
     """
 
     @transaction.commit_on_success
-    def import_data(self, productversion, case_data):
+    def import_data(self, productversion, case_data, force_dupes=False):
         """
         Import the top-level dictionary of cases and suites.
 
@@ -65,6 +67,8 @@ class Importer(object):
         * productversion -- The ProductVersion model object for which case_data
           will be imported
         * case_data -- a dictionary of cases and/or suites to be imported
+        * force_dupes -- if True, will import cases with duplicate names.  If
+          False, they will be skipped.
 
         """
 
@@ -82,7 +86,9 @@ class Importer(object):
         # gracefully if no cases.
         if "cases" in case_data:
             case_importer = CaseImporter(productversion, suite_importer)
-            result.append(case_importer.import_cases(case_data["cases"]))
+            result.append(case_importer.import_cases(
+                case_data["cases"],
+                force_dupes=force_dupes))
 
         # now create the suites and add cases to them
         if suite_importer:
@@ -123,7 +129,7 @@ class CaseImporter(object):
         # cache of user emails
         self.user_cache = UserCache()
 
-    def import_cases(self, case_dict_list):
+    def import_cases(self, case_dict_list, force_dupes=False):
         """
         Import the test cases in the data.
 
@@ -165,7 +171,7 @@ class CaseImporter(object):
                 continue
 
             # Don't re-import if we have the same case name and Product Version
-            if CaseVersion.objects.filter(
+            if not force_dupes and CaseVersion.objects.filter(
                 name=new_case["name"],
                 productversion=self.productversion,
                 ).exists():
@@ -196,7 +202,10 @@ class CaseImporter(object):
             sid = transaction.savepoint()
 
             # create the top-level case object which holds the versions
-            case = Case.objects.create(product=self.productversion.product)
+            case = Case.objects.create(
+                product=self.productversion.product,
+                idprefix=new_case.get("idprefix", ""),
+                )
 
             # create the case version which holds the details
             caseversion = CaseVersion.objects.create(
@@ -264,7 +273,7 @@ class CaseImporter(object):
             try:
                 casestep = CaseStep.objects.create(
                     caseversion=caseversion,
-                    number=step_num+1,
+                    number=step_num + 1,
                     instruction=new_step["instruction"],
                     expected=new_step.get("expected", ""),
                     )
@@ -500,7 +509,7 @@ class SuiteImporter(object):
                 for case in suite_data["cases"]:
                     SuiteCase.objects.create(case=case, suite=suite)
 
-        # we have imported (or warned on) these items, so reset ourself.
+        # we have imported (or warned on) these items, so reset map.
         self.map.clear()
 
         return self.result
@@ -577,7 +586,7 @@ class ImportResult(object):
         """
 
         result_list = [
-            "{0}: {1}".format(x["reason"], x["item"])
+            "{0}: {1}".format(x["reason"], json.dumps(x["item"], indent=4))
             for x in self.warnings
             ]
 

@@ -1,3 +1,4 @@
+# coding: utf-8
 """
 Tests for suite management views.
 
@@ -49,6 +50,20 @@ class SuitesTest(case.view.manage.ListViewTestCase,
 
         res = self.get(
             params={"filter-product": str(one.product.id)})
+
+        self.assertInList(res, "Foo 1")
+        self.assertNotInList(res, "Foo 2")
+
+
+    def test_filter_by_productversion(self):
+        """Can filter by product of productversion."""
+        pv1 = self.F.ProductVersionFactory()
+        pv2 = self.F.ProductVersionFactory()
+        one = self.factory.create(name="Foo 1", product=pv1.product)
+        self.factory.create(name="Foo 2", product=pv2.product)
+
+        res = self.get(
+            params={"filter-productversion": str(pv1.id)})
 
         self.assertInList(res, "Foo 1")
         self.assertNotInList(res, "Foo 2")
@@ -156,7 +171,7 @@ class SuitesTest(case.view.manage.ListViewTestCase,
         self.assertElement(
             res.html,
             "a",
-            href="{0}?product={1}&initial_suite={2}".format(
+            href="{0}?product={1}&suite={2}".format(
                 reverse("manage_case_add"), str(suite.product.id), str(suite.id)
                 ),
             count=count
@@ -248,7 +263,7 @@ class AddSuiteTest(case.view.FormViewTestCase,
         p = self.F.ProductFactory.create()
         form = self.get_form()
         form["product"] = str(p.id)
-        form["name"] = "Foo Suite"
+        form["name"] = "Foo Suite ùê"
         form["description"] = "Foo desc"
         form["status"] = "active"
 
@@ -256,10 +271,10 @@ class AddSuiteTest(case.view.FormViewTestCase,
 
         self.assertRedirects(res, reverse("manage_suites"))
 
-        res.follow().mustcontain("Suite 'Foo Suite' added.")
+        res.follow().mustcontain("Suite 'Foo Suite ùê' added.")
 
         s = p.suites.get()
-        self.assertEqual(s.name, "Foo Suite")
+        self.assertEqual(unicode(s.name), u"Foo Suite ùê")
         self.assertEqual(s.description, "Foo desc")
         self.assertEqual(s.status, "active")
 
@@ -313,15 +328,15 @@ class EditSuiteTest(case.view.FormViewTestCase,
     def test_save_basic(self):
         """Can save updates; redirects to manage suites list."""
         form = self.get_form()
-        form["name"] = "New Foo"
+        form["name"] = "New Foo ùê"
         res = form.submit(status=302)
 
         self.assertRedirects(res, reverse("manage_suites"))
 
-        res.follow().mustcontain("Saved 'New Foo'.")
+        res.follow().mustcontain("Saved 'New Foo ùê'.")
 
         r = self.refresh(self.suite)
-        self.assertEqual(r.name, "New Foo")
+        self.assertEqual(unicode(r.name), u"New Foo ùê")
 
 
 

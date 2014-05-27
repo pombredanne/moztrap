@@ -6,8 +6,7 @@ from django.conf import settings
 from django.core import mail
 from django.core.urlresolvers import reverse
 
-# @@@ import from Django in 1.4
-from djangosecure.test_utils import override_settings
+from django.test.utils import override_settings
 import mock
 
 from tests import case
@@ -35,6 +34,30 @@ class LoginTest(case.view.ViewTestCase):
 
         self.assertRedirects(res, reverse("home"))
 
+
+    def test_login_next_redirect_prevent_external(self):
+        """the 'next' redirect after login can only go somewhere internal"""
+        url = reverse("auth_login") + "?next=example.com"
+        self.F.UserFactory.create(username="test", password="sekrit")
+
+        form = self.app.get(url).forms["loginform"]
+        form["username"] = "test"
+        form["password"] = "sekrit"
+        res = form.submit(status=302)
+
+        self.assertRedirects(res, reverse("home"))
+
+    def test_login_next_redirect_only_to_internal(self):
+        """the 'next' redirect after login can only go somewhere internal"""
+        url = reverse("auth_login") + "?next=/manage/cases/"
+        self.F.UserFactory.create(username="test", password="sekrit")
+
+        form = self.app.get(url).forms["loginform"]
+        form["username"] = "test"
+        form["password"] = "sekrit"
+        res = form.submit(status=302)
+
+        self.assertRedirects(res, reverse("manage_cases"))
 
     def test_email_login(self):
         """Can log in with email address."""
@@ -85,7 +108,7 @@ class LoginTest(case.view.ViewTestCase):
 
             form = res.forms["loginform"]
             answer = session_data["auth_captcha_answer"]
-            form["captcha"] = answer + 1 # oops, wrong answer!
+            form["captcha"] = answer + 1  # oops, wrong answer!
             form["username"] = "test"
             form["password"] = "sekrit"
             res = form.submit(status=200)
@@ -138,7 +161,7 @@ class BrowserIDTest(case.view.ViewTestCase):
 
     def test_fail_redirect(self):
         """Failed BrowserID verification redirects without losing 'next'."""
-        url = reverse("auth_login") + "?next=/foo"
+        url = reverse("auth_login") + "?next=/results/"
         form = self.app.get(url).forms["browserid-form"]
         res = form.submit(status=302)
 
@@ -191,6 +214,31 @@ class BrowserIDTest(case.view.ViewTestCase):
         self.assertRedirects(res, "/")
         user = self.model.User.objects.get()
         self.assertEqual(user.username, "tester")
+
+
+    def test_set_username_next_internal(self):
+        """the 'next' redirect after set_username can go somewhere internal"""
+
+        self.new_browserid()
+        url = reverse("auth_set_username") + "?next=/manage/cases/"
+
+        form = self.app.get(url).forms["setusernameform"]
+        form["username"] = "tester"
+        res = form.submit(status=302)
+        self.assertRedirects(res, "/manage/cases/")
+
+
+    def test_set_username_next_prevent_external(self):
+        """the 'next' redirect can not go somewhere external"""
+
+        self.new_browserid()
+        url = reverse("auth_set_username") + "?next=http://example.com"
+
+        form = self.app.get(url).forms["setusernameform"]
+        form["username"] = "tester"
+        res = form.submit(status=302)
+
+        self.assertRedirects(res, "/")
 
 
     def test_set_username_error(self):

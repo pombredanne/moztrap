@@ -1,10 +1,37 @@
 /*jslint    browser:    true,
             indent:     4 */
-/*global    ich, jQuery */
+/*global    ich, jQuery, URI */
 
 var MT = (function (MT, $) {
 
     'use strict';
+
+    // Converts the dictionary of fields into actual DOM elements
+    MT.renderFilterFields = function (context, data) {
+        var destination = $('<div>');
+        $.each(data.fields, function(i, field) {
+            var options = [];
+            field.options.forEach(function(opt, j) {
+                options.push({
+                    _counter: j + 1,
+                    label: opt[0],
+                    selected: opt[1],
+                    value: opt[2]
+                });
+            });
+            var field_group = ich.filter_group({
+                'field': field,
+                'pinable': data.options.pinable || false,
+                'prefix': data.options.prefix || '',
+                '_field_name_lower': field.name.toLowerCase(),
+                '_field_length_long': field.options.length > 6,
+                '_field_advanced_keyword': data.options.advanced && field.cls === 'keyword',
+                '_options': options,
+            });
+            destination.append(field_group);
+        });
+        $('form', context).prepend(destination);
+    };
 
     // Shows/hides the advanced filtering
     MT.toggleAdvancedFiltering = function (context) {
@@ -45,6 +72,141 @@ var MT = (function (MT, $) {
             }).closest('.filter-item').children('input').click();
             e.preventDefault();
         });
+    };
+
+    // Pinning a filter makes it global by putting it into the session
+    MT.pinFilter = function () {
+        var filterPrefix = "moztrap-filter-";
+
+        // either add or remove a pinned filter value
+        // remove=true will remove it, if it exists
+        function pinFilterValue(filterKey, filterValue, add) {
+
+            // store the filter values as an array, because it's possible
+            // to filter in the same field on multiple values
+            // Must store it as JSON because cookies are just strings
+            var cookieVal = JSON.parse($.cookie(filterKey)) || [];
+
+            if (add) {
+                // we just pinned this filter, add the value to the cookie
+                cookieVal.push(filterValue);
+            }
+            else {
+                // remove the filter value.
+                cookieVal = cookieVal.filter(function (e, i, a) {
+                    return e !== filterValue;
+                });
+            }
+
+            // if no more pinned values for this field, remove the cookie
+            if (cookieVal.length === 0) {
+                cookieVal = null;
+            }
+            else {
+                // marshall back to json here
+                cookieVal = JSON.stringify(cookieVal);
+            }
+
+            // certain fields have the same field name, but values don't
+            // cross over.
+            var path = {path: '/'};
+            if (filterKey.toLowerCase() === filterPrefix + "name" ||
+                filterKey.toLowerCase() === filterPrefix + "id") {
+                path = {};
+                if (cookieVal) {
+                    $(ich.message({
+                        message: "Note: This pinned filter value is constrained to this page only.",
+                        tags: "warning"
+                    })).appendTo($('#messages ul'));
+                    $('#messages ul').messages();
+                }
+            }
+            // filter cookies apply anywhere they're relevant
+            $.cookie(filterKey, cookieVal, path);
+
+        }
+
+        $('.filter-group').on('click', '.pinswitch', function (e) {
+            var thisPin = $(this),
+                filterItem = thisPin.closest(".filter-item"),
+                onoff = filterItem.find(".onoff"),
+                fiInput = filterItem.find('input'),
+                filterValue = fiInput.val(),
+                filterKey =  filterPrefix + fiInput.data('name');
+
+            onoff.toggleClass("pinned");
+
+            pinFilterValue(filterKey, filterValue, onoff.hasClass("pinned"));
+
+        });
+
+        $('.filter-group').on('click', '.onoffswitch', function (e) {
+            var thisPin = $(this),
+                filterItem = thisPin.closest(".filter-item"),
+                onoff = filterItem.find(".onoff"),
+                fiInput = filterItem.find('input'),
+                filterValue = fiInput.val(),
+                filterKey =  filterPrefix + fiInput.data('name');
+
+            onoff.removeClass("pinned");
+
+            pinFilterValue(filterKey, filterValue, false);
+
+        });
+
+        $('.filter-group').on('click', '.andorswitch-checkbox', function (e) {
+            var cookieVal = ($(this)[0].checked) ? JSON.stringify(["on"]) : null;
+            $.cookie('moztrap-' + $(this).attr('name'), cookieVal, {path: '/'});
+        });
+    };
+
+    MT.getPinnedFilters = function () {
+        var cookieChunks = document.cookie.split("; "),
+            prefix = "moztrap-filter-",
+            uri = new URI(MT.getActionAjaxReplaceUri()),
+            filters = {};
+
+        for (var i = 0; i < cookieChunks.length; i++) {
+            var chunk = cookieChunks[i];
+            if (chunk.indexOf(prefix) === 0) {
+                // this is one of our filters
+                var parts = chunk.split("="),
+                    k = parts[0],
+                    v = JSON.parse($.cookie(k));
+                filters[k.replace(prefix, "")] = v;
+            }
+        }
+
+        return filters;
+    };
+
+    // A pinned filter should have the "pinned" class on the onoff span.
+    // Just used for first display of the screen, if filters are in the
+    // session already.
+    //
+    // 1. Check the filters against the cookies to see which ones should
+    //    show as pinned.
+    // 2. Update the ajax replace url to reflect the pinned filters
+    MT.updatePageForExistingPinnedFilters = function () {
+
+
+        // get all the pinned filter cookies
+        var filters = MT.getPinnedFilters(),
+            uri = new URI(MT.getActionAjaxReplaceUri());
+
+        for (var key in filters) {
+            var values = filters[key];
+
+            // update the uri to have the pinned value
+            uri.addSearch("filter-" + key, values);
+
+            // find the filter-item that this pinned filter applies to and
+            // add the "pinned" class to the "onoff" span
+            var inputs = "input[value='" + values.join("'],input[value='") +  "']";
+            var terst = $(".filter-group[data-name='" + key + "'] " + inputs);
+            terst.parent().find('.onoff').addClass('pinned');
+        }
+        MT.setActionAjaxReplaceUri(uri.toString());
     };
 
     // Prepare filter-form for ajax-submit

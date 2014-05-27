@@ -9,9 +9,11 @@ from django.views.decorators.cache import never_cache
 from django.contrib import messages
 
 from moztrap import model
+from moztrap.model.mtmodel import NotDeletedCount
 
 from moztrap.view.filters import RunFilterSet
 from moztrap.view.lists import decorators as lists
+from moztrap.view.lists.filters import PinnedFilters
 from moztrap.view.users.decorators import permission_required
 from moztrap.view.utils.ajax import ajax
 from moztrap.view.utils.auth import login_maybe_required
@@ -26,7 +28,7 @@ from . import forms
 @login_maybe_required
 @lists.actions(
     model.Run,
-    ["delete", "clone", "activate", "draft", "deactivate"],
+    ["delete", "clone", "activate", "draft", "deactivate", "refresh"],
     permission="execution.manage_runs")
 @lists.finder(ManageFinder)
 @lists.filter("runs", filterset_class=RunFilterSet)
@@ -38,7 +40,8 @@ def runs_list(request):
         request,
         "manage/run/runs.html",
         {
-            "runs": model.Run.objects.select_related(),
+            "runs": model.Run.objects.select_related().annotate(
+                suite_count=NotDeletedCount("suites", distinct=True)),
             }
         )
 
@@ -69,12 +72,16 @@ def run_add(request):
         run = form.save_if_valid()
         if run is not None:
             messages.success(
-                request, "Run '{0}' added.".format(
+                request, u"Run '{0}' added.".format(
                     run.name)
                 )
             return redirect("manage_runs")
     else:
-        form = forms.AddRunForm(user=request.user)
+        pf = PinnedFilters(request.COOKIES)
+        form = forms.AddRunForm(
+            user=request.user,
+            initial=pf.fill_form_querystring(request.GET).dict(),
+            )
     return TemplateResponse(
         request,
         "manage/run/add_run.html",
@@ -96,8 +103,9 @@ def run_edit(request, run_id):
             request.POST, instance=run, user=request.user)
         saved_run = form.save_if_valid()
         if saved_run is not None:
-            messages.success(request, "Saved '{0}'.".format(saved_run.name))
-            return redirect("manage_runs")
+            messages.success(request, u"Saved '{0}'.".format(saved_run.name))
+            pre_page = request.GET.get('from', "manage_runs")
+            return redirect(pre_page)
     else:
         form = forms.EditRunForm(
             instance=run, user=request.user)

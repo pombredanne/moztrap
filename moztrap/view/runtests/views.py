@@ -3,6 +3,7 @@ Views for test execution.
 
 """
 import json
+from django.db.models import Max
 
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -19,7 +20,7 @@ from ..users.decorators import permission_required
 from ..utils.ajax import ajax
 
 from .finders import RunTestsFinder
-from .forms import EnvironmentSelectionForm
+from .forms import EnvironmentSelectionForm, EnvironmentBuildSelectionForm
 
 
 
@@ -48,22 +49,54 @@ def set_environment(request, run_id):
         current = int(request.GET.get("environment", None))
     except (TypeError, ValueError):
         current = None
+    try:
+        build = int(request.GET.get("build", None))
+    except (TypeError, ValueError):
+        build = None
 
     form_kwargs = {
         "current": current,
-        "environments": run.environments.all()
+        "environments": run.environments.all().select_related()
         }
 
+    # the run could be an individual, or a series.
+    # if it's a series, we need to use the right form
+    # that will prompt them for a build number.
+    # if a run for this series exists with that build number
+    # already, then use that id, otherwise clone this run,
+    # set it active and
+    # create a new one with the build id set.
+    if run.is_series:
+        form_kwargs["run"] = run
+        form_kwargs["build"] = build
+        form_kwargs["user"] = request.user
+        form_class = EnvironmentBuildSelectionForm
+    else:
+        form_class = EnvironmentSelectionForm
+
     if request.method == "POST":
-        form = EnvironmentSelectionForm(
-            request.POST,
-            **form_kwargs)
+        # user responding to this form with their selections
+        # they may or may not be valid
+        form = form_class(request.POST, **form_kwargs)
 
         if form.is_valid():
-            envid = form.save()
-            return redirect("runtests_run", run_id=run_id, env_id=envid)
+            result = form.save()
+
+            # @@@ Carl: seems like there may be a better pattern for this than
+            # what I'm doing here.  Any ideas?
+            try:
+                # If a runid WAS returned, then that would be the new run
+                # created for the build of the runseries.
+                envid, runid = result
+            except TypeError:
+                # if no runid was returned, then this is not a runseries, and
+                # we should just use the run id from this run.
+                envid = result
+                runid = run_id
+            return redirect("runtests_run", run_id=runid, env_id=envid)
     else:
-        form = EnvironmentSelectionForm(**form_kwargs)
+        # run just specified, prompt user for env and possibly build
+        form = form_class(**form_kwargs)
 
     return TemplateResponse(
         request,
@@ -79,10 +112,12 @@ def set_environment(request, run_id):
 # maps valid action names to default parameters
 ACTIONS = {
     "start": {},
-    "finishsucceed": {},
-    "finishinvalidate": {"comment": ""},
-    "finishfail": {"stepnumber": None, "comment": "", "bug": ""},
-    "restart": {},
+    "result_pass": {},
+    "result_invalid": {"comment": ""},
+    "result_skip": {},
+    "result_block": {"comment": ""},
+    "result_fail": {"stepnumber": None, "comment": "", "bug": ""},
+    "start": {},
     }
 
 
@@ -91,10 +126,10 @@ ACTIONS = {
 @permission_required("execution.execute")
 @lists.finder(RunTestsFinder)
 @lists.filter("runcaseversions", filterset_class=RunTestsRunCaseVersionFilterSet)
-@lists.sort("runcaseversions")
+@lists.sort("runcaseversions", defaultfield="order")
 @ajax("runtests/list/_runtest_list.html")
 def run(request, run_id, env_id):
-    run = get_object_or_404(model.Run.objects.select_related(), pk=run_id)
+    run = get_object_or_404(model.Run.objects.select_related("product"), pk=run_id)
 
     if not run.status == model.Run.STATUS.active:
         messages.info(
@@ -103,12 +138,17 @@ def run(request, run_id, env_id):
             "Please select a different test run.")
         return redirect("runtests")
 
+    # if the environment specified in the URL doesn't exist for this run,
+    # then ask the user to specify one that does.
     try:
         environment = run.environments.get(pk=env_id)
     except model.Environment.DoesNotExist:
         return redirect("runtests_environment", run_id=run_id)
 
     if request.method == "POST":
+        # Based on this action, create a new Result object with the values we
+        # get from the post.
+
         prefix = "action-"
         while True:
             rcv = None
@@ -136,23 +176,21 @@ def run(request, run_id, env_id):
                     "{0} is not a valid run/caseversion ID.".format(rcv_id))
                 break
 
-            try:
-                result = rcv.results.get(
-                    tester=request.user, environment=environment)
-            except model.Result.DoesNotExist:
-                result = model.Result.objects.create(
-                    runcaseversion=rcv,
-                    tester=request.user,
-                    environment=environment,
-                    user=request.user)
-
+            # take the values out of the POST so we can pass them in to the
+            # method call on the Result object
             for argname in defaults.keys():
                 try:
                     defaults[argname] = request.POST[argname]
                 except KeyError:
                     pass
 
-            getattr(result, action)(**defaults)
+            # put the values specific to this run
+            defaults.update({
+                "environment": environment,
+                "user": request.user,
+                })
+
+            getattr(rcv, action)(**defaults)
             break
 
         if request.is_ajax():
@@ -161,7 +199,7 @@ def run(request, run_id, env_id):
             if rcv is None:
                 return HttpResponse(
                     json.dumps({"html": "", "no_replace": True}),
-                    content_type = "application/json",
+                    content_type="application/json",
                     )
             # by not returning a TemplateResponse, we skip the sort and finder
             # decorators, which aren't applicable to a single case.
@@ -170,7 +208,8 @@ def run(request, run_id, env_id):
                 "runtests/list/_runtest_list_item.html",
                 {
                     "environment": environment,
-                    "runcaseversion": rcv
+                    "runcaseversion": rcv,
+                    "run": run
                     }
                 )
         else:
@@ -179,6 +218,17 @@ def run(request, run_id, env_id):
     envform = EnvironmentSelectionForm(
         current=environment.id, environments=run.environments.all())
 
+    current_result_select = (
+        "SELECT status from execution_result as r "
+        "WHERE r.runcaseversion_id = execution_runcaseversion.id "
+        "AND r.environment_id = {0} "
+        "AND r.status not in ({1}) "
+        "AND r.is_latest = 1 "
+        "ORDER BY r.created_on DESC LIMIT 1".format(
+            environment.id,
+            ", ".join(
+                ["'{0}'".format(x) for x in model.Result.PENDING_STATES]
+                )))
 
     return TemplateResponse(
         request,
@@ -190,7 +240,15 @@ def run(request, run_id, env_id):
             "run": run,
             "envform": envform,
             "runcaseversions": run.runcaseversions.select_related(
-                "caseversion").filter(environments=environment),
+                "caseversion__case",
+                ).prefetch_related(
+                    "caseversion__tags",
+                    "caseversion__attachments",
+                    "caseversion__steps",
+                    ).filter(
+                        environments=environment,
+                        ).extra(select={
+                            "current_result": current_result_select}),
             "finder": {
                 # finder decorator populates top column (products), we
                 # prepopulate the other two columns

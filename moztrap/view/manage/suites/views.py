@@ -12,6 +12,7 @@ from moztrap import model
 from moztrap.model.mtmodel import NotDeletedCount
 from moztrap.view.filters import SuiteFilterSet
 from moztrap.view.lists import decorators as lists
+from moztrap.view.lists.filters import PinnedFilters
 from moztrap.view.users.decorators import permission_required
 from moztrap.view.utils.ajax import ajax
 from moztrap.view.utils.auth import login_maybe_required
@@ -70,12 +71,18 @@ def suite_add(request):
         suite = form.save_if_valid()
         if suite is not None:
             messages.success(
-                request, "Suite '{0}' added.".format(
+                request, u"Suite '{0}' added.".format(
                     suite.name)
                 )
             return redirect("manage_suites")
     else:
-        form = forms.AddSuiteForm(user=request.user)
+        pf = PinnedFilters(request.COOKIES)
+        # Note: inital takes a dict, NOT a QueryDict.  It won't work correctly
+        # with a QueryDict.
+        form = forms.AddSuiteForm(
+            user=request.user,
+            initial=pf.fill_form_querystring(request.GET).dict(),
+            )
     return TemplateResponse(
         request,
         "manage/suite/add_suite.html",
@@ -90,15 +97,15 @@ def suite_add(request):
 @permission_required("library.manage_suites")
 def suite_edit(request, suite_id):
     """Edit a suite."""
-    suite = get_object_or_404(
-        model.Suite, pk=suite_id)
+    suite = get_object_or_404(model.Suite, pk=suite_id)
     if request.method == "POST":
         form = forms.EditSuiteForm(
             request.POST, instance=suite, user=request.user)
         saved_suite = form.save_if_valid()
         if saved_suite is not None:
-            messages.success(request, "Saved '{0}'.".format(saved_suite.name))
-            return redirect("manage_suites")
+            messages.success(request, u"Saved '{0}'.".format(saved_suite.name))
+            pre_page = request.GET.get('from', "manage_suites")
+            return redirect(pre_page)
     else:
         form = forms.EditSuiteForm(
             instance=suite, user=request.user)

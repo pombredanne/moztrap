@@ -1,6 +1,6 @@
 /*jslint    browser:    true,
             indent:     4 */
-/*global    ich, jQuery */
+/*global    ich, jQuery, FILTERS */
 
 var MT = (function (MT, $) {
 
@@ -15,6 +15,14 @@ var MT = (function (MT, $) {
         });
         $('input[placeholder], textarea[placeholder]').placeholder();
         $('.multiselect').multiselect();
+
+        // filtering.js
+        // this creates all the filter drop-downs before any
+        // customAutocomplete is set up.
+        if (typeof FILTERS !== 'undefined') {
+            MT.renderFilterFields('#filter', FILTERS);
+        }
+
         $('#filter').customAutocomplete({
             textbox: '#text-filter',
             inputList: '.visual .filter-group:not(.keyword)',
@@ -26,7 +34,8 @@ var MT = (function (MT, $) {
             fakePlaceholder: true,
             initialFocus: true,
             inputsNeverRemoved: true,
-            prefix: 'filter'
+            prefix: 'filter',
+            debounce: true
         });
         $('#clientfilter').customAutocomplete({
             textbox: '#text-filter',
@@ -39,7 +48,8 @@ var MT = (function (MT, $) {
             fakePlaceholder: true,
             initialFocus: true,
             inputsNeverRemoved: true,
-            prefix: 'filter'
+            prefix: 'filter',
+            debounce: true
         });
         $('.tagging').customAutocomplete({
             textbox: '#id_add_tags',
@@ -64,7 +74,8 @@ var MT = (function (MT, $) {
             restrictAllowNew: true,
             inputType: 'tag',
             noInputsNote: true,
-            prefix: 'tag'
+            prefix: 'tag',
+            pinable: false
         });
         $('#editprofile .add-item, #editproductversionenvs .add-item').customAutocomplete({
             textbox: '#env-elements-input',
@@ -84,7 +95,9 @@ var MT = (function (MT, $) {
             allowNew: true,
             triggerSubmit: null,
             inputsNeverRemoved: true,
-            prefix: 'filter'
+            prefix: 'filter',
+            debounce: true,
+            pinable: false
         });
         $('.runsdrill').html5finder({
             loading: true,
@@ -134,42 +147,33 @@ var MT = (function (MT, $) {
         MT.loadListItemDetails();
         MT.manageActionsAjax('.manage, .manage-form');
         MT.listActionAjax(
-            '.manage, .results, .run',
+            '.manage, .viewresults, .run',
             '.listordering .sortlink, .pagination .prev, .pagination .next, .pagination .page, .perpage a'
         );
         MT.itemStatusDropdown('.manage');
+        MT.shareListUrlDropdown('.listpage');
+        MT.stickPagesizeSettings();
 
         // filtering.js
         MT.toggleAdvancedFiltering('.magicfilter');
         MT.preventCaching('#filter');
         MT.directFilterLinks();
-        MT.filterFormAjax('.manage, .results, .run');
+        MT.filterFormAjax('.manage, .viewresults, .run');
         MT.clientSideFilter({container: '#envnarrowing'});
+        MT.pinFilter();
+        MT.updatePageForExistingPinnedFilters();
 
         // manage-products.js
         MT.formOptionsFilter({
-            container: '#suite-add-form, #suite-edit-form',
+            container: '#single-case-add, #bulk-case-add',
             trigger_sel: '#id_product',
-            target_sel: '.multiunselected .select',
-            option_sel: '.selectitem',
-            multiselect_widget_bool: true
-        });
-        MT.formOptionsFilter({
-            container: '#run-add-form, #run-edit-form',
-            trigger_sel: '#id_productversion',
-            target_sel: '.multiunselected .select',
-            option_sel: '.selectitem',
-            multiselect_widget_bool: true
+            target_sel: '#id_productversion',
+            no_default: true
         });
         MT.formOptionsFilter({
             container: '#single-case-add, #bulk-case-add',
             trigger_sel: '#id_product',
-            target_sel: '#id_productversion'
-        });
-        MT.formOptionsFilter({
-            container: '#single-case-add, #bulk-case-add',
-            trigger_sel: '#id_product',
-            target_sel: '#id_initial_suite',
+            target_sel: '#id_suite',
             optional: true
         });
         MT.formOptionsFilter({
@@ -184,23 +188,76 @@ var MT = (function (MT, $) {
         MT.filterProductTags('#single-case-add, #bulk-case-add');
         MT.testcaseAttachments('.case-form .attach');
 
+        // multiselect-ajax.js
+        MT.populateMultiselectItems({
+            container: '#suite-edit-form, #suite-add-form',
+            trigger_field: '#id_product',
+            ajax_url_root: "/api/v1/caseselection/?format=json&limit=0",
+            ajax_trigger_filter: "productversion__product",
+            ajax_for_field: "case__suites",
+            for_type: "suite",
+            included_sort_field: "case__suitecases__order",
+            ich_template: ich.case_select_item
+        });
+        MT.populateMultiselectItems({
+            container: '#tag-add-form, #tag-edit-form',
+            trigger_field: '#id_product',
+            ajax_url_root: "/api/v1/caseversionselection/?format=json&limit=0",
+            ajax_trigger_filter: "productversion__product",
+            ajax_for_field: "tags",
+            for_type: "tag",
+            included_sort_field: "name",
+            ich_template: ich.caseversion_select_item,
+            hide_without_trigger_value: true
+        });
+        MT.populateMultiselectItems({
+            container: '#run-add-form',
+            trigger_field: '#id_productversion',
+            ajax_url_root: "/api/v1/suiteselection/?format=json&limit=0",
+            ajax_trigger_filter: "product",
+            ajax_for_field: "runs",
+            for_type: "run",
+            ich_template: ich.suite_select_item
+        });
+        MT.populateMultiselectItems({
+            container: '#run-edit-form',
+            trigger_field: '#id_productversion',
+            ajax_url_root: "/api/v1/suiteselection/?format=json&limit=0",
+            ajax_trigger_filter: "product",
+            ajax_for_field: "runs",
+            for_type: "run",
+            included_sort_field: "runs__runsuites__order",
+            ich_template: ich.suite_select_item,
+            refetch_on_trigger: false
+        });
+
         // manage-env.js
         MT.createEnvProfile('#profile-add-form');
         MT.addEnvToProfile('#editprofile, #editproductversionenvs', '#add-environment-form, #productversion-environments-form');
         MT.editEnvProfileName('#editprofile');
         MT.bulkSelectEnvs('#envnarrowing');
 
+        // manage.js
+        MT.disableOnChecked({
+            container: '#run-add-form, #run-edit-form',
+            trigger_field: '#id_is_series',
+            target_field: '#id_build'
+        });
+
         // runtests.js
 
         MT.hideEmptyRuntestsEnv();
         MT.autoFocus('.details.stepfail > .summary', '#runtests');
         MT.autoFocus('.details.testinvalid > .summary', '#runtests');
+        MT.autoFocus('.details.testskip > .summary', '#runtests');
+        MT.autoFocus('.details.testblock > .summary', '#runtests');
         MT.breadcrumb('.drilldown');
         MT.expandAllTests('#runtests');
         MT.runTests('#runtests');
         MT.failedTestBug('#runtests');
         MT.expandTestDetails('#runtests');
         MT.filterEnvironments('#runtests-environment-form');
+        MT.startRefreshTimer('#runtests');
 
         // owa.js
         MT.owa();

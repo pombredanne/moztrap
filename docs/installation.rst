@@ -1,8 +1,48 @@
 Installation
 ============
 
-Clone the repository
---------------------
+.. _quickstart:
+
+Quickstart
+----------
+
+MozTrap requires `Python`_ 2.6 or 2.7 and `MySQL`_ 5.1+ with the InnoDB
+backend.
+
+These steps assume that you have `git`_, `virtualenv`_, `virtualenvwrapper`_,
+and a compilation toolchain available (with the `Python`_ and `MySQL`_ client
+development header files), and that you have a local `MySQL`_ server running
+which your shell user has permission to create databases in. See the full
+:doc:`installation` documentation for details and troubleshooting.
+
+1. ``git clone --recursive git://github.com/mozilla/moztrap``
+2. ``cd moztrap``
+3. ``mkvirtualenv moztrap``
+4. ``bin/install-reqs``
+5. ``echo "CREATE DATABASE moztrap CHARACTER SET utf8" | mysql``
+6. :ref:`create a local.py<create-db>`
+7. ``./manage.py syncdb --migrate``
+8. ``./manage.py create_default_roles``
+9. ``./manage.py runserver``
+10. Visit http://localhost:8000 in your browser.
+
+Congratulations! If that all worked, you have a functioning instance of MozTrap
+for local testing, experimentation, and :doc:`development <development>`.
+
+Please read the :doc:`deployment` documentation for important security and
+other considerations before deploying a public instance of MozTrap.
+
+.. _git: http://git-scm.com
+.. _Python: http://www.python.org
+.. _MySQL: http://www.mysql.com
+.. _virtualenv: http://www.virtualenv.org
+.. _virtualenvwrapper: http://www.doughellmann.com/projects/virtualenvwrapper/
+
+
+.. _detailed-install:
+
+Detailed Install
+----------------
 
 First, clone the `MozTrap repository`_.
 
@@ -17,7 +57,7 @@ the root of the clone, run::
 If you want to run the latest and greatest code, the default ``master`` branch
 is what you want. If you want to run a stable release branch, switch to it now::
 
-    git checkout 0.8.X
+    git checkout 1.4.5.5
 
 
 Install the Python dependencies
@@ -27,6 +67,11 @@ If you want to run this project in a `virtualenv`_ to isolate it from other
 Python projects on your system, create the virtualenv and activate it. Then run
 ``bin/install-reqs`` to install the dependencies for this project into your
 Python environment.
+
+.. Note::
+
+    On some linux flavors, you may need to run
+    ``sudo apt-get install libmysqlclient-dev`` prior to bin/install-reqs.
 
 Installing the dependencies requires `pip`_ 1.0 or higher. `pip`_ is
 automatically available in a `virtualenv`_; if not using `virtualenv`_ you may
@@ -85,6 +130,8 @@ provided :ref:`vendor library`.
 
 Create a database
 -----------------
+
+.. _create-db:
 
 You'll need a MySQL database. If you have a local MySQL server and your user
 has rights to create databases on it, just run this command to create the

@@ -1,7 +1,7 @@
 {% extends 'manage/run/base.html' %}
 
 {% block content %}
-<section class="{% block sectionid %}{% endblock %}">
+<section class="{% block sectionid %}{% endblock %}" data-run-id="{% block runid %}{% endblock %}">
   <h2>
     {% block formtitle %}{% endblock %}
     {% include "_helplink.html" with helpURL="execution.html#run-edit-fields" %}
@@ -14,7 +14,10 @@
 
     {% include "forms/_field.html" with field=form.productversion label="Product Version" %}
     {% include "forms/_field.html" with field=form.name %}
+    {% include "forms/_field.html" with field=form.is_series label="Series" %}
     {% include "forms/_field.html" with field=form.description %}
+      {% include "_markdownlink.html" with fieldname="description field supports" %}
+    {% include "forms/_field.html" with field=form.build %}
     {% include "forms/_field.html" with field=form.start %}
     {% include "forms/_field.html" with field=form.end %}
 
@@ -32,6 +35,8 @@
 
     <div class="form-actions">
       <button type="submit">save run</button>
+      {% url 'manage_runs' as manage_url %}
+      {% include "manage/_cancel_button.html" with manage_url=manage_url %}
     </div>
   </form>
 </section>

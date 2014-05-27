@@ -1,6 +1,6 @@
 .add-run, .edit-run
 
-  .product-version-field, .name-field, .description-field
+  .product-version-field, .build-field
     +full(24)
     +suffix(6,24)
     .type
@@ -8,6 +8,29 @@
     .value, .errorlist
       +columns(12,18)
       +omega(18)
+
+  .name-field, .description-field
+    +columns(18,24)
+    .type
+      +columns(6,18)
+    .value, .errorlist
+      +columns(12,18)
+      +omega(18)
+
+  .series-field, .markdown-link
+    +columns(5,24)
+    +omega(24)
+    float: left
+
+    &.optional
+      +leader(.25)
+
+    &.optional + &.readonly
+      .type
+        +columns(1,6)
+      .value, .errorlist
+        +columns(5,6)
+        +omega(6)
 
   .start-field, .end-field
     +columns(7,24)
@@ -41,11 +64,14 @@
         +suffix(6,24)
 
     .name, .byname
-      +columns(6,11)
+      +columns(7,11)
 
     .author, .byauthor
-      +columns(5,11)
+      +columns(3,11)
       +omega(11)
+
+    .byauthor
+      margin-right: rhythm(.5)
 
     .title
       +demi

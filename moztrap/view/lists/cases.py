@@ -1,6 +1,7 @@
 from filters import KeywordFilter
 from django.db.models import Q
 
+
 class PrefixIDFilter(KeywordFilter):
     """
     A string and an int, separated by a delimiter.
@@ -10,12 +11,14 @@ class PrefixIDFilter(KeywordFilter):
 
     if more than one of these filters is used, they are ORed with each other.
     """
+    is_default_and = False
 
 
     def __init__(self, name, delimiter="-"):
         self.prefixlookup = "case__idprefix"
         self.delimiter = delimiter
-        super(PrefixIDFilter, self).__init__(name, lookup="case__id")
+        super(PrefixIDFilter, self).__init__(name, lookup="case__id",
+            switchable=False)
 
 
     def filter(self, queryset, values):
@@ -25,13 +28,18 @@ class PrefixIDFilter(KeywordFilter):
         for value in values:
 
             # split the prefix from the id
-            prefix, sep, caseid = value.rpartition(self.delimiter)
+            try:
+                prefix, sep, caseid = value.rpartition(self.delimiter)
+            except AttributeError:
+                prefix = None
+                caseid = value
+
 
             # if there is a prefix of abc-xyz, then we don't want to
             # try searching in the int field for xyz, presume it's all
             # the prefix, as the suffix MUST always be numeric.
             # also, if the user put the delimiter at the end, strip it off
-            if not caseid.isdecimal():
+            if not isinstance(caseid, int) and not caseid.isdecimal():
                 prefix = value.rstrip(self.delimiter)
                 caseid = None
 

@@ -2,7 +2,6 @@
 Tests for test case queryset-filtering by ID and with optional ID prefix.
 
 """
-from sets import Set
 from tests import case
 from moztrap.view.lists.cases import PrefixIDFilter
 
@@ -58,14 +57,22 @@ class PrefixIDFilterTest(case.DBTestCase):
         self.assertEqual(res.get().name, "CV 1")
 
 
+    def test_id_only_int(self):
+        """ID as an int"""
+        td = self.create_testdata()
+        res = self.filter([int(td["cv1"].case.id)])
+
+        self.assertEqual(res.get().name, "CV 1")
+
+
     def test_id_and_prefix_from_different_cases_gets_both(self):
         """ID from one case and prefix from a different case gets both"""
         td = self.create_testdata()
         res = self.filter([u"pre", unicode(td["cv2"].case.id)])
 
         self.assertEqual(
-            Set([x.name for x in res.all()]),
-            Set(["CV 1", "CV 2"]),
+            set([x.name for x in res.all()]),
+            set(["CV 1", "CV 2"]),
             )
 
 
@@ -85,8 +92,8 @@ class PrefixIDFilterTest(case.DBTestCase):
         res = self.filter([u"pre", u"moz"])
 
         self.assertEqual(
-            Set([x.name for x in res.all()]),
-            Set(["CV 1", "CV 3", "CV 4"]),
+            set([x.name for x in res.all()]),
+            set(["CV 1", "CV 3", "CV 4"]),
             )
 
 
@@ -96,6 +103,6 @@ class PrefixIDFilterTest(case.DBTestCase):
         res = self.filter([u"moz"])
 
         self.assertEqual(
-            Set([x.name for x in res.all()]),
-            Set(["CV 3", "CV 4"]),
+            set([x.name for x in res.all()]),
+            set(["CV 3", "CV 4"]),
             )

@@ -12,6 +12,7 @@ from moztrap import model
 
 from moztrap.view.filters import ProductVersionFilterSet
 from moztrap.view.lists import decorators as lists
+from moztrap.view.lists.filters import PinnedFilters
 from moztrap.view.users.decorators import permission_required
 from moztrap.view.utils.ajax import ajax
 from moztrap.view.utils.auth import login_maybe_required
@@ -70,12 +71,16 @@ def productversion_add(request):
         productversion = form.save_if_valid()
         if productversion is not None:
             messages.success(
-                request, "Product version '{0}' added.".format(
+                request, u"Product version '{0}' added.".format(
                     productversion.name)
                 )
             return redirect("manage_productversions")
     else:
-        form = forms.AddProductVersionForm(user=request.user)
+        pf = PinnedFilters(request.COOKIES)
+        form = forms.AddProductVersionForm(
+            user=request.user,
+            initial=pf.fill_form_querystring(request.GET).dict(),
+            )
     return TemplateResponse(
         request,
         "manage/productversion/add_productversion.html",
@@ -97,8 +102,9 @@ def productversion_edit(request, productversion_id):
             request.POST, instance=productversion, user=request.user)
         pv = form.save_if_valid()
         if pv is not None:
-            messages.success(request, "Saved '{0}'.".format(pv.name))
-            return redirect("manage_productversions")
+            messages.success(request, u"Saved '{0}'.".format(pv.name))
+            pre_page = request.GET.get('from', "manage_productversions")
+            return redirect(pre_page)
     else:
         form = forms.EditProductVersionForm(
             instance=productversion, user=request.user)

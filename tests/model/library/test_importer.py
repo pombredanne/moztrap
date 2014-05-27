@@ -41,6 +41,27 @@ class ImporterTest(ImporterTestBase, case.DBTestCase):
         self.assertEqual(cv.case.product, self.pv.product)
 
 
+    def test_create_caseversion_idprefix(self):
+        """Successful import creates a caseversion with an idprefix."""
+        self.import_data(
+            {
+                "cases": [
+                    {
+                        "name": "Foo",
+                        "idprefix": "wow",
+                        "steps": [{"instruction": "do this"}],
+                        }
+                ]
+            }
+        )
+
+        cv = self.model.CaseVersion.objects.get()
+        self.assertEqual(cv.name, "Foo")
+        self.assertEqual(cv.case.idprefix, "wow")
+        self.assertEqual(cv.productversion, self.pv)
+        self.assertEqual(cv.case.product, self.pv.product)
+
+
     def test_create_caseversion_description(self):
         """Test the description field of a new test case"""
         result = self.import_data(
@@ -135,7 +156,7 @@ class ImporterTest(ImporterTestBase, case.DBTestCase):
         Two caseversions that both use the same user.  Test that import caches
         the user and doesn't have to query for it a second time.
 
-        Expect 17 queries for this import:
+        Expect 19 queries for this import:
 
         Query 1: Ensure this caseversion does not already exist for this
         productversion::
@@ -154,6 +175,8 @@ class ImporterTest(ImporterTestBase, case.DBTestCase):
             `auth_user`.`is_superuser`, `auth_user`.`last_login`,
             `auth_user`.`date_joined` FROM `auth_user` WHERE
             `auth_user`.`email` = sumbudee@mozilla.com
+
+        Transaction: SAVEPOINT s140735243669888_x1
 
         Query 3: Create the first new case object::
 
@@ -217,7 +240,32 @@ class ImporterTest(ImporterTestBase, case.DBTestCase):
             = Foo, `description` = , `latest` = True, `envs_narrowed` = False
             WHERE `library_caseversion`.`id` = 10
 
-        Query 9: Add the new step to the caseversion::
+        Query 9: During save, check if there are other caseversions for this
+                 case to sync names.
+            SELECT `library_caseversion`.`id`, `library_caseversion`
+            .`created_on`,
+            `library_caseversion`.`created_by_id`, `library_caseversion`
+            .`modified_on`,
+            `library_caseversion`.`modified_by_id`, `library_caseversion`
+            .`deleted_on`,
+            `library_caseversion`.`deleted_by_id`, `library_caseversion`
+            .`cc_version`,
+            `library_caseversion`.`status`, `library_caseversion`
+            .`productversion_id`,
+            `library_caseversion`.`case_id`, `library_caseversion`.`name`,
+            `library_caseversion`.`description`, `library_caseversion`
+            .`latest`,
+            `library_caseversion`.`envs_narrowed` FROM `library_caseversion`
+             INNER JOIN
+            `core_productversion` ON (`library_caseversion`
+            .`productversion_id` =
+            `core_productversion`.`id`) WHERE (`library_caseversion`
+            .`deleted_on` IS
+            NULL AND `library_caseversion`.`case_id` = 1 ) ORDER BY
+            `library_caseversion`.`case_id` ASC,
+            `core_productversion`.`order` ASC
+
+        Query 10: Add the new step to the caseversion::
 
             INSERT INTO `library_casestep` (`created_on`, `created_by_id`,
             `modified_on`, `modified_by_id`, `deleted_on`, `deleted_by_id`,
@@ -225,7 +273,9 @@ class ImporterTest(ImporterTestBase, case.DBTestCase):
             (2012-03-07 19:35:34, None, 2012-03-07 19:35:34, None, None, None,
             10, 1, do this, )
 
-        Query 10: Ensure the second caseversion with this name and pv doesn't
+        Transaction: RELEASE SAVEPOINT s140735243669888_x1
+
+        Query 11: Ensure the second caseversion with this name and pv doesn't
         exist::
 
             SELECT (1) AS `a` FROM `library_caseversion` WHERE
@@ -233,17 +283,19 @@ class ImporterTest(ImporterTestBase, case.DBTestCase):
             `library_caseversion`.`name` = Bar AND
             `library_caseversion`.`productversion_id` = 12 ) LIMIT 1
 
+        Transaction: SAVEPOINT s140735243669888_x2
+
         **NOTE: We didn't have to search for the user again, since it was
         cached**
 
-        Query 11: Create the second new case::
+        Query 12: Create the second new case::
 
             INSERT INTO `library_case` (`created_on`, `created_by_id`,
             `modified_on`, `modified_by_id`, `deleted_on`, `deleted_by_id`,
             `product_id`) VALUES (2012-03-07 19:35:34, None, 2012-03-07
             19:35:34, None, None, None, 12)
 
-        Queries 12-16: Create the second new caseversion::
+        Queries 13-17: Create the second new caseversion::
 
              INSERT INTO `library_caseversion` (`created_on`, `created_by_id`,
              `modified_on`, `modified_by_id`, `deleted_on`, `deleted_by_id`,
@@ -299,7 +351,32 @@ class ImporterTest(ImporterTestBase, case.DBTestCase):
              True, `envs_narrowed` = False WHERE `library_caseversion`.`id` =
              11
 
-        Query 17: Add the step to the second caseversion::
+        Query 18: Check for other caseversions for the same case to sync names
+
+            SELECT `library_caseversion`.`id`, `library_caseversion`
+            .`created_on`,
+            `library_caseversion`.`created_by_id`, `library_caseversion`
+            .`modified_on`,
+            `library_caseversion`.`modified_by_id`, `library_caseversion`
+            .`deleted_on`,
+            `library_caseversion`.`deleted_by_id`, `library_caseversion`
+            .`cc_version`,
+            `library_caseversion`.`status`, `library_caseversion`
+            .`productversion_id`,
+            `library_caseversion`.`case_id`, `library_caseversion`.`name`,
+            `library_caseversion`.`description`, `library_caseversion`
+            .`latest`,
+            `library_caseversion`.`envs_narrowed` FROM `library_caseversion`
+             INNER JOIN
+            `core_productversion` ON (`library_caseversion`
+            .`productversion_id` =
+            `core_productversion`.`id`) WHERE (`library_caseversion`
+            .`deleted_on` IS
+            NULL AND `library_caseversion`.`case_id` = 2 ) ORDER BY
+            `library_caseversion`.`case_id` ASC,
+            `core_productversion`.`order` ASC
+
+        Query 19: Add the step to the second caseversion::
 
             INSERT INTO `library_casestep` (`created_on`, `created_by_id`,
             `modified_on`, `modified_by_id`, `deleted_on`, `deleted_by_id`,
@@ -307,12 +384,32 @@ class ImporterTest(ImporterTestBase, case.DBTestCase):
             (2012-03-07 19:35:34, None, 2012-03-07 19:35:34, None, None, None,
             11, 1, do this, )
 
+        Transaction: RELEASE SAVEPOINT s140735243669888_x2
+
+        Note: Django 1.4 now logs transaction points in the connection.queries
+
+        EXPECT: 19 Queries + 4 Transaction actions = 23 queries.
+
+        To re-capture this query list, use a block like this in place
+            of the "with self.assertNumQueries..." block::
+
+                from django.conf import settings
+                from django.db import connection
+                import json
+
+                settings.DEBUG = True
+                connection.queries = []
+                result = self.import_data(case_data)
+
+                print(json.dumps(connection.queries, indent=4))
+                settings.DEBUG = False
+
         """
 
         # need a user to exist, so the import can find it.
         user = self.F.UserFactory.create(email="sumbudee@mozilla.com")
 
-        case_data= {
+        case_data = {
             "cases": [
                 {
                     "created_by": "sumbudee@mozilla.com",
@@ -327,8 +424,9 @@ class ImporterTest(ImporterTestBase, case.DBTestCase):
                 ]
             }
 
-        with self.assertNumQueries(17):
-           result = self.import_data(case_data)
+        # Test code as normal
+        with self.assertNumQueries(23):
+            result = self.import_data(case_data)
 
         cv1 = self.model.CaseVersion.objects.get(name="Foo")
         self.assertEqual(cv1.created_by, user)
@@ -387,6 +485,32 @@ class ImporterTest(ImporterTestBase, case.DBTestCase):
         self.assertEqual(result.num_cases, 1)
 
 
+    def test_create_caseversion_existing_tag_different_case(self):
+        """A caseversion that uses an existing product tag with diff case"""
+
+        # need a tag to exist, so the import can find it.
+        tag = self.model.Tag.objects.create(
+            name="footag",
+            product=self.pv.product,
+            )
+
+        result = self.import_data(
+            {
+                "cases": [
+                    {
+                        "name": "Foo",
+                        "steps": [{"instruction": "do this"}],
+                        "tags": ["FooTag"],
+                        }
+                ]
+            }
+        )
+
+        cv = self.model.CaseVersion.objects.get()
+        self.assertEqual(cv.tags.get(), tag)
+        self.assertEqual(result.num_cases, 1)
+
+
     def test_create_caseversion_existing_suite(self):
         """A case that uses an existing suite."""
 
@@ -396,10 +520,34 @@ class ImporterTest(ImporterTestBase, case.DBTestCase):
             product=self.pv.product,
             )
 
+        result = self.import_data({
+            "cases": [{
+                "name": "Foo",
+                "steps": [{"instruction": "do this"}],
+                "suites": ["FooSuite"],
+                }]
+            }
+        )
+
+        cv = self.model.CaseVersion.objects.get()
+        self.assertEqual(cv.case.suites.get(), suite)
+        self.assertEqual(result.num_cases, 1)
+        self.assertEqual(result.num_suites, 0)
+
+
+    def test_create_caseversion_existing_suite_different_case(self):
+        """A case that uses an existing suite with different case."""
+
+        # need a suite to exist, so the import can find it.
+        suite = self.model.Suite.objects.create(
+            name="foosuite",
+            product=self.pv.product,
+            )
+
         result = self.import_data(
-                {
+            {
                 "cases": [
-                        {
+                    {
                         "name": "Foo",
                         "steps": [{"instruction": "do this"}],
                         "suites": ["FooSuite"],
@@ -605,8 +753,10 @@ class ImporterTransactionTest(ImporterTestBase, case.TransactionTestCase):
 
         class SurpriseException(RuntimeError):
             pass
+
         def raise_exception():
             raise SurpriseException("Surprise!")
+
         new_import_suites.side_effect = raise_exception
 
         with self.assertRaises(SurpriseException):
@@ -638,4 +788,3 @@ class ImporterTransactionTest(ImporterTestBase, case.TransactionTestCase):
             result.warnings[0]["reason"],
             ImportResult.SKIP_STEP_NO_INSTRUCTION,
             )
-

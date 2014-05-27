@@ -38,6 +38,7 @@ class AddCaseFormTest(case.DBTestCase):
         defaults = {
             "product": [self.product.id],
             "productversion": [self.productversion.id],
+            "priority": [3],
             "idprefix": ["pref"],
             "name": ["Can register."],
             "description": ["A user can sign up for the site."],
@@ -73,6 +74,18 @@ class AddCaseFormTest(case.DBTestCase):
         self.assertEqual(cv.name, "Can register.")
 
 
+    def test_bad_priority(self):
+        """Can add a test case bad priority defaults to None."""
+        data = self.get_form_data()
+        data["priority"] = ["foo"]
+
+        form = self.form(data=data)
+
+        cv = form.save().versions.get()
+
+        self.assertEqual(cv.case.priority, None)
+
+
     def test_created_by(self):
         """If user is provided, created objects have created_by set."""
         form = self.form(data=self.get_form_data(), user=self.user)
@@ -89,6 +102,7 @@ class AddCaseFormTest(case.DBTestCase):
         form = self.form()
 
         self.assertEqual(form["status"].value(), "active")
+        self.assertEqual(form["priority"].value(), None)
 
 
     def test_wrong_product_version(self):
@@ -105,33 +119,61 @@ class AddCaseFormTest(case.DBTestCase):
             )
 
 
-    def test_no_initial_suite(self):
-        """If no manage-suite-cases perm, no initial_suite field."""
-        self.assertNotIn("initial_suite", self.form().fields)
+    def test_no_suite(self):
+        """If no manage-suite-cases perm, no suite field."""
+        self.assertNotIn("initial", self.form().fields)
 
 
-    def test_initial_suite(self):
+    def test_suite(self):
         """Can pick an initial suite for case to be in (with right perms)."""
         self.user.user_permissions.add(
             model.Permission.objects.get(codename="manage_suite_cases"))
         suite = self.F.SuiteFactory.create(product=self.product)
 
         data = self.get_form_data()
-        data["initial_suite"] = suite.id
+        data["suite"] = suite.id
 
         case = self.form(data=data, user=self.user).save()
 
         self.assertEqual(list(case.suites.all()), [suite])
 
 
+    def test_initial_suite_order(self):
+        """Adding a new case to a suite adds it in last place for the suite"""
+        self.user.user_permissions.add(
+            model.Permission.objects.get(codename="manage_suite_cases"))
+        suite = self.F.SuiteFactory.create(product=self.product)
+        c1 = self.F.CaseFactory()
+        c2 = self.F.CaseFactory()
+        self.F.SuiteCaseFactory(
+            suite=suite,
+            case=c1,
+            order=0)
+        self.F.SuiteCaseFactory(
+            suite=suite,
+            case=c2,
+            order=1)
+
+        data = self.get_form_data()
+        data["suite"] = suite.id
+
+        newcase = self.form(data=data, user=self.user).save()
+
+        self.assertEqual(list(newcase.suites.all()), [suite])
+
+        self.assertEqual(
+            [x.case for x in suite.cases.through.objects.order_by("order")],
+            [c1, c2, newcase])
+
+
     def test_wrong_suite_product(self):
         """Selecting suite from wrong product results in validation error."""
         self.user.user_permissions.add(
             model.Permission.objects.get(codename="manage_suite_cases"))
-        suite = self.F.SuiteFactory.create() # some other product
+        suite = self.F.SuiteFactory.create()  # some other product
 
         data = self.get_form_data()
-        data["initial_suite"] = suite.id
+        data["suite"] = suite.id
 
         form = self.form(data=data, user=self.user)
 
@@ -336,33 +378,61 @@ class AddBulkCasesFormTest(case.DBTestCase):
             )
 
 
-    def test_no_initial_suite(self):
-        """If no manage-suite-cases perm, no initial_suite field."""
-        self.assertNotIn("initial_suite", self.form().fields)
+    def test_no_suite(self):
+        """If no manage-suite-cases perm, no suite field."""
+        self.assertNotIn("suite", self.form().fields)
 
 
-    def test_initial_suite(self):
+    def test_suite(self):
         """Can pick an initial suite for case to be in (with right perms)."""
         self.user.user_permissions.add(
             model.Permission.objects.get(codename="manage_suite_cases"))
         suite = self.F.SuiteFactory.create(product=self.product)
 
         data = self.get_form_data()
-        data["initial_suite"] = suite.id
+        data["suite"] = suite.id
 
         case = self.form(data=data, user=self.user).save()[0]
 
         self.assertEqual(list(case.suites.all()), [suite])
 
 
+    def test_initial_suite_order(self):
+        """Adding a new case to a suite adds it in last place for the suite"""
+        self.user.user_permissions.add(
+            model.Permission.objects.get(codename="manage_suite_cases"))
+        suite = self.F.SuiteFactory.create(product=self.product)
+        c1 = self.F.CaseFactory()
+        c2 = self.F.CaseFactory()
+        self.F.SuiteCaseFactory(
+            suite=suite,
+            case=c1,
+            order=0)
+        self.F.SuiteCaseFactory(
+            suite=suite,
+            case=c2,
+            order=1)
+
+        data = self.get_form_data()
+        data["suite"] = suite.id
+
+        newcase = self.form(data=data, user=self.user).save()[0]
+
+        self.assertEqual(list(newcase.suites.all()), [suite])
+
+        self.assertEqual(
+            [x.case for x in suite.cases.through.objects.order_by("order")],
+            [c1, c2, newcase])
+
+
     def test_wrong_suite_product(self):
         """Selecting suite from wrong product results in validation error."""
         self.user.user_permissions.add(
             model.Permission.objects.get(codename="manage_suite_cases"))
-        suite = self.F.SuiteFactory.create() # some other product
+        suite = self.F.SuiteFactory.create()  # some other product
 
         data = self.get_form_data()
-        data["initial_suite"] = suite.id
+        data["suite"] = suite.id
 
         form = self.form(data=data, user=self.user)
 
@@ -476,6 +546,7 @@ class EditCaseVersionFormTest(case.DBTestCase):
         """Initial data is populated accurately."""
         cv = self.F.CaseVersionFactory.create(
             case__idprefix="pref",
+            case__priority=3,
             name="a name",
             description="a desc",
             status="active",
@@ -491,6 +562,7 @@ class EditCaseVersionFormTest(case.DBTestCase):
                 "name": "a name",
                 "description": "a desc",
                 "idprefix": "pref",
+                "priority": 3,
                 "status": "active",
                 "cc_version": cv.cc_version,
                 }
@@ -519,6 +591,7 @@ class EditCaseVersionFormTest(case.DBTestCase):
                     "name": ["new name"],
                     "description": ["new desc"],
                     "idprefix": ["pref"],
+                    "priority": [1],
                     "status": ["active"],
                     "cc_version": str(cv.cc_version),
                     "steps-TOTAL_FORMS": ["2"],
@@ -537,6 +610,48 @@ class EditCaseVersionFormTest(case.DBTestCase):
         cv = self.refresh(cv)
 
         self.assertEqual(cv.name, "new name")
+        self.assertEqual(cv.case.priority, 1)
+        self.assertEqual(cv.description, "new desc")
+        self.assertEqual(cv.status, "active")
+        self.assertEqual(
+            [s.instruction for s in cv.steps.all()],
+            ["new step", "do this instead"])
+
+
+    def test_save_edits_bad_priority(self):
+        """Can edit basic data and steps and save, priority set to None."""
+        cv = self.F.CaseVersionFactory.create(
+            name="a name", description="a desc", status="draft")
+        step = self.F.CaseStepFactory.create(
+            caseversion=cv, instruction="do this", expected="see that")
+
+        form = self.form(
+            instance=cv,
+            data=MultiValueDict(
+                {
+                    "name": ["new name"],
+                    "description": ["new desc"],
+                    "idprefix": ["pref"],
+                    "priority": ["foo"],
+                    "status": ["active"],
+                    "cc_version": str(cv.cc_version),
+                    "steps-TOTAL_FORMS": ["2"],
+                    "steps-INITIAL_FORMS": ["1"],
+                    "steps-0-id": [""],
+                    "steps-0-instruction": ["new step"],
+                    "steps-0-expected": [""],
+                    "steps-1-id": [str(step.id)],
+                    "steps-1-instruction": ["do this instead"],
+                    "steps-1-expected": [""],
+                    }
+                )
+            )
+
+        cv = form.save()
+        cv = self.refresh(cv)
+
+        self.assertEqual(cv.name, "new name")
+        self.assertEqual(cv.case.priority, None)
         self.assertEqual(cv.description, "new desc")
         self.assertEqual(cv.status, "active")
         self.assertEqual(
@@ -623,7 +738,7 @@ class EditCaseVersionFormTest(case.DBTestCase):
         cv = self.F.CaseVersionFactory.create(
             name="a name", description="a desc", status="draft")
         submitted_version = cv.cc_version
-        cv.save() # increments the concurrency-control version
+        cv.save()  # increments the concurrency-control version
 
         form = self.form(
             instance=cv,
@@ -748,7 +863,7 @@ class StepFormSetTest(case.DBTestCase):
         fs = self.bound(
             {
                 "steps-TOTAL_FORMS": "0",
-                "steps-INITIAL_FORMS": "1", # JS doesn't touch this
+                "steps-INITIAL_FORMS": "1",  # JS doesn't touch this
                 },
             instance=step.caseversion,
             )
@@ -763,7 +878,7 @@ class StepFormSetTest(case.DBTestCase):
         fs = self.bound(
             {
                 "steps-TOTAL_FORMS": "1",
-                "steps-INITIAL_FORMS": "1", # JS doesn't touch this
+                "steps-INITIAL_FORMS": "1",  # JS doesn't touch this
                 "steps-0-id": "",
                 "steps-0-instruction": "do this",
                 "steps-0-expected": "see that",

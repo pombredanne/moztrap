@@ -1,3 +1,4 @@
+# coding: utf-8
 """
 Tests for tag management views.
 
@@ -62,6 +63,20 @@ class TagsTest(case.view.manage.ListViewTestCase,
         self.assertNotInList(res, "Tag 2")
 
 
+    def test_filter_by_productversion(self):
+        """Can filter by product of productversion."""
+        pv1 = self.F.ProductVersionFactory()
+        pv2 = self.F.ProductVersionFactory()
+        one = self.factory.create(name="Foo 1", product=pv1.product)
+        self.factory.create(name="Foo 2", product=pv2.product)
+
+        res = self.get(
+            params={"filter-productversion": str(pv1.id)})
+
+        self.assertInList(res, "Foo 1")
+        self.assertNotInList(res, "Foo 2")
+
+
     def test_sort_by_product(self):
         """Can sort by product."""
         pb = self.F.ProductFactory.create(name="B")
@@ -72,6 +87,36 @@ class TagsTest(case.view.manage.ListViewTestCase,
         res = self.get(params={"sortfield": "product", "sortdirection": "asc"})
 
         self.assertOrderInList(res, "Tag 2", "Tag 1")
+
+
+
+class TagDetailTest(case.view.AuthenticatedViewTestCase,
+                      case.view.NoCacheTest,
+                      ):
+    """Test for tag-detail ajax view."""
+    def setUp(self):
+        """Setup for case details tests; create a suite."""
+        super(TagDetailTest, self).setUp()
+        self.tag = self.F.TagFactory.create()
+
+
+    @property
+    def url(self):
+        """Shortcut for suite detail url."""
+        return reverse(
+            "manage_tag_details",
+            kwargs=dict(tag_id=self.tag.id)
+        )
+
+
+    def test_details_description(self):
+        """Details includes description, markdownified safely."""
+        self.tag.description = "_foodesc_ <script>"
+        self.tag.save()
+
+        res = self.get(headers={"X-Requested-With": "XMLHttpRequest"})
+
+        res.mustcontain("<em>foodesc</em> &lt;script&gt;")
 
 
 
@@ -98,17 +143,17 @@ class AddTagTest(case.view.FormViewTestCase,
         """Can add a tag with basic data, including a product."""
         p = self.F.ProductFactory.create()
         form = self.get_form()
-        form["name"] = "Some browser"
+        form["name"] = "Some browser ùê"
         form["product"] = str(p.id)
 
         res = form.submit(status=302)
 
         self.assertRedirects(res, reverse("manage_tags"))
 
-        res.follow().mustcontain("Tag 'Some browser' added.")
+        res.follow().mustcontain("Tag 'Some browser ùê' added.")
 
         t = self.model.Tag.objects.get()
-        self.assertEqual(t.name, "Some browser")
+        self.assertEqual(unicode(t.name), u"Some browser ùê")
         self.assertEqual(t.product, p)
 
 
@@ -161,16 +206,16 @@ class EditTagTest(case.view.FormViewTestCase,
         """Can save updates; redirects to manage tags list."""
         p = self.F.ProductFactory.create()
         form = self.get_form()
-        form["name"] = "new name"
+        form["name"] = "new name ùê"
         form["product"] = str(p.id)
         res = form.submit(status=302)
 
         self.assertRedirects(res, reverse("manage_tags"))
 
-        res.follow().mustcontain("Saved 'new name'.")
+        res.follow().mustcontain("Saved 'new name ùê'.")
 
         t = self.refresh(self.tag)
-        self.assertEqual(t.name, "new name")
+        self.assertEqual(unicode(t.name), u"new name ùê")
         self.assertEqual(t.product, p)
 
 
@@ -216,7 +261,7 @@ class TagsAutocompleteTest(case.view.AuthenticatedViewTestCase,
 
     def test_matching_tags_json(self):
         """Returns list of matching tags in JSON."""
-        t = self.F.TagFactory.create(name="foo")
+        t = self.F.TagFactory.create(name="foùêo")
 
         res = self.get("o")
 
@@ -226,8 +271,8 @@ class TagsAutocompleteTest(case.view.AuthenticatedViewTestCase,
                 "suggestions": [
                     {
                         "id": t.id,
-                        "name": "foo",
-                        "postText": "o",
+                        "name": u"foùêo",
+                        "postText": u"ùêo",
                         "preText": "f",
                         "product-id": None,
                         "type": "tag",

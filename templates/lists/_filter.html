@@ -1,7 +1,13 @@
-{% load icanhaz pagination %}
+{% load icanhaz pagination filterset %}
 
 <nav id="{% block filterid %}filter{% endblock %}" class="magicfilter">
   <h3 class="navhead">List Filtering</h3>
+    <div class="share-list">
+        <div class="share-list-button" title="get a share-able link to this list"></div>
+        <div class="share-list-popup">
+            <input class=url-text>
+        </div>
+    </div>
     <div class="textual">
       <label for="text-filter">filter</label>
       <input type="text" name="text-filter" value="" id="text-filter" autocomplete="off" placeholder="Enter filter terms">
@@ -9,7 +15,6 @@
         {% icanhaz "autocomplete_suggestion" %}
       </ul>
     </div>
-
     <section class="visual compact">
       <h4 class="toggle"><a href="#">Advanced Filtering</a></h4>
       <form method="GET" id="filterform" autocomplete="off">
@@ -23,9 +28,11 @@
         {% endif %}
 
         {% icanhaz "autocomplete_input" %}
-        {% for field in filters %}
-        {% include "lists/_filter_group.html" with advanced=1 prefix="filter" %}
-        {% endfor %}
+
+        <script>
+        var FILTERS = {% filterset_to_json filters with advanced=1 prefix="filter" pinable=1 %}
+        </script>
+        {% icanhaz "filter_group" %}
 
         <div class="form-actions">
           List no longer reflects filters:

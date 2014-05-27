@@ -4,6 +4,7 @@ Models for test-case library (cases, suites).
 """
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Max
 
 from ..attachments.models import Attachment
 from ..mtmodel import MTModel, DraftStatusModel
@@ -17,6 +18,7 @@ class Case(MTModel):
     """A test case for a given product."""
     product = models.ForeignKey(Product, related_name="cases")
     idprefix = models.CharField(max_length=25, blank=True)
+    priority = models.IntegerField(blank=True, null=True)
 
 
     def __unicode__(self):
@@ -93,7 +95,7 @@ class CaseVersion(MTModel, DraftStatusModel, HasEnvironmentsModel):
     productversion = models.ForeignKey(
         ProductVersion, related_name="caseversions")
     case = models.ForeignKey(Case, related_name="versions")
-    name = models.CharField(max_length=200)
+    name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
 
     # denormalized for queries
@@ -115,15 +117,32 @@ class CaseVersion(MTModel, DraftStatusModel, HasEnvironmentsModel):
     def save(self, *args, **kwargs):
         """Save CaseVersion, updating latest version."""
         skip_set_latest = kwargs.pop("skip_set_latest", False)
+        skip_sync_name = kwargs.pop("skip_sync_name", False)
         super(CaseVersion, self).save(*args, **kwargs)
         if not skip_set_latest:
             self.case.set_latest_version(update_instance=self)
+
+        # keep the name in sync for all caseversions
+        if not skip_sync_name:
+            for cv in self.case.versions.all():
+                if not cv == self:
+                    cv.name = self.name
+                    cv.save(
+                        skip_sync_name=True,
+                        skip_set_latest=True,
+                        )
+
 
 
     def delete(self, *args, **kwargs):
         """Delete CaseVersion, updating latest version."""
         super(CaseVersion, self).delete(*args, **kwargs)
-        self.case.set_latest_version()
+        if not self.case.versions.count():
+            # we just deleted the last version for this case, so delete
+            # the case as well
+            self.case.delete(*args, **kwargs)
+        else:
+            self.case.set_latest_version()
 
 
     def undelete(self, *args, **kwargs):
@@ -170,9 +189,21 @@ class CaseVersion(MTModel, DraftStatusModel, HasEnvironmentsModel):
         kwargs.setdefault(
             "cascade", ["steps", "attachments", "tags", "environments"])
         overrides = kwargs.setdefault("overrides", {})
-        overrides.setdefault("name", "Cloned: {0}".format(self.name))
+        overrides.setdefault("name", u"Cloned: {0}".format(self.name))
         if "productversion" not in overrides and "case" not in overrides:
             overrides["case"] = self.case.clone(cascade=[])
+            suitecases = SuiteCase.objects.filter(case=self.case)
+            for suitecase in suitecases:
+                suite = suitecase.suite
+                order = SuiteCase.objects.filter(
+                    suite=suite,
+                    ).aggregate(Max("order"))["order__max"] or 0
+                SuiteCase.objects.create(
+                    case=overrides["case"],
+                    suite=suite,
+                    user=kwargs["user"],
+                    order=order + 1,
+                    )
         return super(CaseVersion, self).clone(*args, **kwargs)
 
 
@@ -208,9 +239,13 @@ class CaseVersion(MTModel, DraftStatusModel, HasEnvironmentsModel):
         Result = self.runcaseversions.model.results.related.model
         StepResult = Result.stepresults.related.model
         return set(
-            StepResult.objects.filter(
-                result__runcaseversion__caseversion=self).exclude(
-                bug_url="").values_list("bug_url", flat=True).distinct()
+            StepResult.objects.only(
+                "bug_url",
+                "deleted_on",
+                "result_id",
+                ).filter(
+                    result__runcaseversion__caseversion=self).exclude(
+                        bug_url="").values_list("bug_url", flat=True).distinct()
             )
 
 
@@ -266,7 +301,7 @@ class Suite(MTModel, DraftStatusModel):
     DEFAULT_STATUS = DraftStatusModel.STATUS.active
 
     product = models.ForeignKey(Product, related_name="suites")
-    name = models.CharField(max_length=200)
+    name = models.CharField(db_index=True, max_length=200)
     description = models.TextField(blank=True)
 
     cases = models.ManyToManyField(

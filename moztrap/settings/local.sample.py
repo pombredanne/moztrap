@@ -17,7 +17,7 @@ Copy local.sample.py to local.py and modify as needed.
 #         "PASSWORD": "",
 #         "STORAGE_ENGINE": "InnoDB",
 #         "OPTIONS": {
-#                 "init_command": "SET storage_engine=InnoDB",
+#                 "init_command": "SET default_storage_engine=InnoDB",
 #             },
 #         }
 #     }
@@ -115,3 +115,11 @@ Copy local.sample.py to local.py and modify as needed.
 #        "KEY_PREFIX": "", # add a global key prefix here if necessary
 #    }
 #}
+
+# if DEBUG:
+    # LOGGING["handlers"]["console"] = {
+    #     "level": "DEBUG",
+    #     "class": "logging.StreamHandler",
+    #     }
+
+    # LOGGING["root"] = {"handlers": ["console"]}

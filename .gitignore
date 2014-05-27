@@ -8,3 +8,6 @@ docs/_build/*
 *.pyc
 *.DS_Store
 .idea
+.coverage
+logs/*
+build/*

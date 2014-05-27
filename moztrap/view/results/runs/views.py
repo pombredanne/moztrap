@@ -20,7 +20,7 @@ from ..finders import ResultsFinder
 @login_maybe_required
 @lists.finder(ResultsFinder)
 @lists.filter("runs", filterset_class=RunFilterSet)
-@lists.sort("runs", "start", "asc")
+@lists.sort("runs", "start", "desc")
 @ajax("results/run/list/_runs_list.html")
 def runs_list(request):
     """List runs."""
@@ -28,7 +28,17 @@ def runs_list(request):
         request,
         "results/run/runs.html",
         {
-            "runs": model.Run.objects.select_related(),
+            "runs": model.Run.objects.filter(is_series=False).only(
+                "name",
+                "start",
+                "end",
+                "productversion",
+                "productversion__version",
+                "productversion__product__name",
+                ).select_related(
+                    "productversion",
+                    "productversion__product",
+                    )
             }
         )
 
@@ -38,7 +48,9 @@ def runs_list(request):
 def run_details(request, run_id):
     """Get details snippet for a run."""
     run = get_object_or_404(
-        model.Run, pk=run_id)
+        model.Run.objects.prefetch_related(
+            "environments",
+            "environments__elements"), pk=run_id)
     return TemplateResponse(
         request,
         "results/run/list/_run_details.html",

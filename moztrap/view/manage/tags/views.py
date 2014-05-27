@@ -16,6 +16,7 @@ from moztrap import model
 
 from moztrap.view.filters import TagFilterSet
 from moztrap.view.lists import decorators as lists
+from moztrap.view.lists.filters import PinnedFilters
 from moztrap.view.users.decorators import permission_required
 from moztrap.view.utils.ajax import ajax
 from moztrap.view.utils.auth import login_maybe_required
@@ -42,9 +43,25 @@ def tags_list(request):
         request,
         "manage/tag/tags.html",
         {
-            "tags": model.Tag.objects.all(),
+            "tags": model.Tag.objects.select_related("product", "created_by"),
             }
         )
+
+
+
+@never_cache
+@login_maybe_required
+def tag_details(request, tag_id):
+    """Get details snippet for a tag."""
+    tag = get_object_or_404(
+        model.Tag, pk=tag_id)
+    return TemplateResponse(
+        request,
+        "manage/tag/list/_tag_details.html",
+        {
+            "tag": tag
+        }
+    )
 
 
 
@@ -57,17 +74,22 @@ def tag_add(request):
         tag = form.save_if_valid()
         if tag is not None:
             messages.success(
-                request, "Tag '{0}' added.".format(
+                request, u"Tag '{0}' added.".format(
                     tag.name)
                 )
             return redirect("manage_tags")
     else:
-        form = forms.AddTagForm(user=request.user)
+        pf = PinnedFilters(request.COOKIES)
+        form = forms.AddTagForm(
+            user=request.user,
+            initial=pf.fill_form_querystring(request.GET).dict(),
+            )
     return TemplateResponse(
         request,
         "manage/tag/add_tag.html",
         {
-            "form": form
+            "form": form,
+            "hide_multiselect": 1,
             }
         )
 
@@ -83,8 +105,9 @@ def tag_edit(request, tag_id):
             request.POST, instance=tag, user=request.user)
         saved_tag = form.save_if_valid()
         if saved_tag is not None:
-            messages.success(request, "Saved '{0}'.".format(saved_tag.name))
-            return redirect("manage_tags")
+            messages.success(request, u"Saved '{0}'.".format(saved_tag.name))
+            pre_page = request.GET.get('from', "manage_tags")
+            return redirect(pre_page)
     else:
         form = forms.EditTagForm(instance=tag, user=request.user)
     return TemplateResponse(
@@ -93,6 +116,7 @@ def tag_edit(request, tag_id):
         {
             "form": form,
             "tag": tag,
+            "hide_multiselect": (tag.product is None),
             }
         )
 
@@ -116,7 +140,7 @@ def tag_autocomplete(request):
         # want pre and post to be case-accurate
         start = tag.name.lower().index(text.lower())
         pre = tag.name[:start]
-        post = tag.name[start+len(text):]
+        post = tag.name[start + len(text):]
         suggestions.append({
                 "preText": pre,
                 "typedText": text,

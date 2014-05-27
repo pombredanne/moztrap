@@ -4,6 +4,9 @@ Default Django settings for MozTrap project.
 """
 from os.path import dirname, join, abspath
 from os import environ
+import django.template
+
+django.template.add_to_builtins('django.templatetags.future')
 
 BASE_PATH = dirname(dirname(dirname(abspath(__file__))))
 
@@ -11,7 +14,7 @@ DEBUG = True
 TEMPLATE_DEBUG = DEBUG
 
 ADMINS = [
-    ("Carl Meyer", "cmeyer@mozilla.com"),
+    ("Some One", "someone@mozilla.com"),
 ]
 
 MANAGERS = ADMINS
@@ -23,7 +26,7 @@ DATABASES = {
         "USER": environ.get("USER", ""),
         "PASSWORD": "",
         "OPTIONS": {
-            "init_command": "SET storage_engine=InnoDB",
+            "init_command": "SET default_storage_engine=InnoDB",
             },
         "STORAGE_ENGINE": "InnoDB"
         }
@@ -171,7 +174,7 @@ LOGGING = {
         }
     },
     "loggers": {
-        "django.request":{
+        "django.request": {
             "handlers": ["mail_admins"],
             "level": "ERROR",
             "propagate": True,
@@ -196,7 +199,7 @@ INSTALLED_APPS += ["floppyforms"]
 
 INSTALLED_APPS += ["djangosecure"]
 SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_AGE = 8 * 60 * 60 # 8 hours
+SESSION_COOKIE_AGE = 8 * 60 * 60  # 8 hours
 SECURE_FRAME_DENY = True
 
 MINIMUM_PASSWORD_CHARS = 8
@@ -207,7 +210,7 @@ FORBIDDEN_PASSWORDS = [
     "pass",
     "123",
     "test"
-    ] # @@@ get full list from InfraSec
+    ]  # @@@ get full list from InfraSec
 
 ALLOW_ANONYMOUS_ACCESS = False
 

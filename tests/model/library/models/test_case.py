@@ -10,6 +10,8 @@ from mock import patch
 
 from tests import case
 
+from moztrap.model import SuiteCase
+
 
 
 class CaseTest(case.DBTestCase):
@@ -78,6 +80,31 @@ class CaseVersionTest(case.DBTestCase):
         self.assertEqual(new.status, "active")
 
 
+    def test_clone_single_suite(self):
+        cv = self.F.CaseVersionFactory()
+        suite = self.F.SuiteFactory(product=cv.case.product)
+        self.F.SuiteCaseFactory(suite=suite, case=cv.case)
+
+        user = self.F.UserFactory.create(username='tester')
+        new = cv.clone(user=user)
+
+        self.assertEqual(len(SuiteCase.objects.filter(suite=suite)), 2)
+
+    def test_clone_multiple_suites(self):
+        cv = self.F.CaseVersionFactory()
+        num_suites = 3
+        suites = []
+        for i in range(0, num_suites):
+            suites.append(self.F.SuiteFactory(name='Suite {0}'.format(i), product=cv.case.product))
+            self.F.SuiteCaseFactory(suite=suites[i], case=cv.case)
+
+        user = self.F.UserFactory.create(username='tester')
+        new = cv.clone(user=user)
+
+        for i in range(0, num_suites):
+            self.assertEqual(len(SuiteCase.objects.filter(suite=suites[i])), 2)
+
+
     def test_clone_steps(self):
         """Cloning a caseversion clones its steps."""
         cs = self.F.CaseStepFactory.create()
@@ -143,6 +170,21 @@ class CaseVersionTest(case.DBTestCase):
 
         self.assertEqual(set(cv.environments.all()), set(pv.environments.all()))
         self.assertFalse(cv.envs_narrowed)
+
+
+    def test_deleting_last_version_deletes_case(self):
+        """Deleting the last case version deletes its case as well."""
+        c = self.F.CaseFactory.create()
+        p = c.product
+        cv = self.F.CaseVersionFactory.create(
+            productversion__product=p, productversion__version="3", case=c)
+
+        cv.delete()
+
+        self.assertEqual(
+            self.model.Case.objects.count(),
+            0
+        )
 
 
     def test_inherits_env_removal(self):

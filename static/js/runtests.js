@@ -11,7 +11,7 @@ var MT = (function (MT, $) {
         $('.runenvselect.empty').hide();
     };
 
-    // Add focus to ``invalid`` and ``fail`` textboxes when expanded
+    // Add focus to ``invalid``, ``fail``, ``block`` and ``skip`` textboxes when expanded
     MT.autoFocus = function (trigger, context) {
         $(context).on('click', trigger, function () {
             if ($(this).parent().hasClass('open')) {
@@ -91,10 +91,17 @@ var MT = (function (MT, $) {
                     success: function (response) {
                         var newTest = $(response.html);
                         test.loadingOverlay('remove');
-                        if (response.html) {
+                        if ($(response.html).is("article")) {
                             test.replaceWith(newTest);
                             ajaxFormsInit(newTest);
                             newTest.find('.details').html5accordion();
+                        }
+                        else {
+                            $(ich.message({
+                                  message: "This test or test run is no longer available.  Please see your test manager.",
+                                  tags: "error"
+                              })).appendTo($('#messages ul'));
+                            $('#messages ul').messages();
                         }
                     }
                 });
@@ -235,6 +242,55 @@ var MT = (function (MT, $) {
             };
 
             triggers.change(doFilter);
+        }
+    };
+
+    // Refetch list items according to filters to update existing list items
+    MT.refreshRuntests = function (container) {
+        var context = $(container),
+            filterForm = context.find('#filterform');
+        if (context.length) {
+            var replaceList = context.find('.action-ajax-replace')
+            console.log(replaceList.data("ajax-update-url"))
+            var pagenum = replaceList.find(".listnav").find(".current").html();
+            $.ajax({
+                url: replaceList.data("ajax-update-url"),
+                cache: false,
+                data: {
+                    pagesize: replaceList.find('.listnav').data('pagesize'),
+                    pagenumber: replaceList.find(".listnav").find(".current").html()
+                },
+                success: function (response) {
+                    var newList = $(response.html);
+
+                    if (response.html) {
+                        // here we want to walk each existing item in the list,
+                        // and replace its other-result with what we have in this response
+
+                        // loop through all the articles.
+                        $('article').each(function(idx, item) {
+                            // find the matching one in the response.html
+                            var match = newList.find("#" + item.id);
+                            if (match.length) {
+                                var other = $(item).find(".other-result");
+                                other.html(match.find(".other-result").html());
+                            }
+
+                        });
+                    }
+                },
+                complete: function() {
+                    setTimeout("MT.refreshRuntests('#runtests')", 30000);
+                }
+            });
+        }
+    };
+
+    MT.startRefreshTimer = function (container) {
+        var context = $(container),
+            filterForm = context.find('#filterform');
+        if (context.length) {
+            setTimeout("MT.refreshRuntests('#runtests')", 30000);
         }
     };
 

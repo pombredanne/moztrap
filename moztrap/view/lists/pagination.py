@@ -3,7 +3,7 @@ List pagination utilities.
 
 """
 import math
-
+from django.db.utils import DatabaseError
 from ..utils.querystring import update_querystring
 
 
@@ -18,8 +18,11 @@ def from_request(request):
     Given a request, return tuple (pagesize, pagenumber).
 
     """
+    default_pagesize = positive_integer(
+        request.COOKIES.get("moztrap-pagesize", DEFAULT_PAGESIZE),
+        DEFAULT_PAGESIZE)
     pagesize = positive_integer(
-        request.GET.get("pagesize", DEFAULT_PAGESIZE), DEFAULT_PAGESIZE)
+        request.GET.get("pagesize", default_pagesize), default_pagesize)
     pagenumber = positive_integer(
         request.GET.get("pagenumber", 1), 1)
     return pagesize, pagenumber
@@ -69,9 +72,9 @@ class Pager(object):
         Elides some ranges of page numbers with None in long lists.
 
         """
-        MIN_SKIP = 3 # don't bother eliding just one or two pages
-        FROM_CURRENT = 2 # always show two to either side of current page
-        FROM_END = 2 # always show two from each end
+        MIN_SKIP = 3  # don't bother eliding just one or two pages
+        FROM_CURRENT = 2  # always show two to either side of current page
+        FROM_END = 2  # always show two from each end
 
         skip = []
         ret = []
@@ -93,7 +96,15 @@ class Pager(object):
     def total(self):
         """The total number of objects."""
         if self._cached_total is None:
-            self._cached_total = self._queryset.count()
+            # @@@ Django 1.5 should not require the .values part and could be
+            # changed to just:
+            #     self._cached_total = self._queryset.count()
+            # Bug 18248
+            try:
+                self._cached_total = self._queryset.count()
+            except DatabaseError:
+                self._cached_total = self._queryset.values("id").count()
+
         return self._cached_total
 
 
@@ -110,7 +121,7 @@ class Pager(object):
             if not self.high:
                 self._sliced_qs = self._queryset.empty()
             else:
-                self._sliced_qs = self._queryset[self.low-1:self.high]
+                self._sliced_qs = self._queryset[self.low - 1:self.high]
         return self._sliced_qs
 
 

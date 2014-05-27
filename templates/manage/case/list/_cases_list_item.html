@@ -9,12 +9,12 @@
 
       <div class="controls">
         {% if user|has_perm:"library.manage_cases" %}
-          {% url manage_caseversion_edit caseversion_id=caseversion.id as caseversion_edit_url %}
+          {% url 'manage_caseversion_edit' caseversion_id=caseversion.id as caseversion_edit_url %}
           {% include "lists/controls/_edit.html" with edit_url=caseversion_edit_url edit_name=caseversion.name %}
-          {% url manage_narrow_environments object_type="caseversion" object_id=caseversion.id as manage_envs_url %}
+          {% url 'manage_narrow_environments' object_type="caseversion" object_id=caseversion.id as manage_envs_url %}
           {% include "manage/_narrow_env_link.html" with manage_envs_url=manage_envs_url %}
           {% include "lists/controls/_clone.html" with clone_id=caseversion.id clone_name=caseversion.name %}
-          {% include "lists/controls/_delete.html" with delete_id=caseversion.case.id delete_name=caseversion.name %}
+          {% include "lists/controls/_delete.html" with delete_id=caseversion.id delete_name=caseversion.name|add:" version "|add:caseversion.productversion.name %}
         {% endif %}
       </div>
 
@@ -32,13 +32,15 @@
 
     </div>
 
+    <div class="priority">{{ caseversion.case.priority }}</div>
+
     <div class="product">{{ caseversion.productversion }}</div>
 
     <div class="modified">{{ caseversion.modified_on }}</div>
 
   </header>
 
-  {% url manage_case_details caseversion.id as details_url %}
+  {% url 'manage_case_details' caseversion.id as details_url %}
   {# _case_details.html loaded via ajax #}
   {% include "lists/_itembody.html" %}
 
